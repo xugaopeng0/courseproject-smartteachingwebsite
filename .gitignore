@@ -1,0 +1,13 @@
+node_modules/
+dist/
+.tools/
+.local/
+.env
+.env.*
+!.env.example
+/uploads/
+/backend/uploads/
+*.exe
+playwright-report/
+test-results/
+*.tsbuildinfo
