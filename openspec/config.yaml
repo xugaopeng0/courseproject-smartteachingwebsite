@@ -7,7 +7,9 @@ context: |
   Stack: React + TypeScript, Go HTTP API, PostgreSQL, Docker Compose.
   Deployment target: local Docker Desktop, localhost:8080.
   UI: white primary surfaces, red accents, responsive Chinese interface.
-  Current scope: authentication, classrooms, private handout uploads; no AI integration.
+  Implemented scope: authentication, classrooms, private handout uploads; no AI integration yet.
+  Planned separately: class-scoped knowledge retrieval with source citations and embeddings;
+  no generated answers, agents, skills, or MCP in that change.
 
 # Per-artifact rules (optional)
 # Add custom rules for specific artifacts.
