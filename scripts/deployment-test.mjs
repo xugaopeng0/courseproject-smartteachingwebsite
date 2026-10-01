@@ -229,20 +229,22 @@ for (const record of cleanup.handouts)
   await teacher.request("/handouts/" + record.id, "DELETE");
 for (const id of [teacherUser.id, studentUser.id])
   assert.match(id, /^[0-9a-f]{32}$/);
-const sql = `BEGIN; DELETE FROM memberships WHERE user_id='${studentUser.id}'; DELETE FROM classrooms WHERE owner_id='${teacherUser.id}'; DELETE FROM users WHERE id IN ('${teacherUser.id}','${studentUser.id}'); COMMIT;`;
+const sql = `DELETE FROM memberships WHERE user_id='${studentUser.id}'; DELETE FROM classrooms WHERE owner_id='${teacherUser.id}'; DELETE FROM users WHERE id IN ('${teacherUser.id}','${studentUser.id}');`;
 await docker(
   [
     "compose",
     "exec",
     "-T",
+    "-e",
+    `MYSQL_PWD=${config.DB_PASSWORD}`,
     "db",
-    "psql",
-    "-v",
-    "ON_ERROR_STOP=1",
-    "-U",
+    "mysql",
+    "-h",
+    "127.0.0.1",
+    "-u",
     "teaching",
-    "-d",
     "teaching",
+    "--default-character-set=utf8mb4",
   ],
   sql,
 );

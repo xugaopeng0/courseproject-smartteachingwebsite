@@ -40,6 +40,11 @@ import {
   type Classroom,
   type Handout,
   type Detail,
+  type KnowledgeDocument,
+  type KnowledgeSearch,
+  type KnowledgeSource,
+  type KnowledgeAnswer,
+  type RetrievalMode,
 } from "./api";
 import "./styles.css";
 
@@ -338,13 +343,31 @@ function App() {
   const [menu, setMenu] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [revision, setRevision] = useState(0);
+  const [knowledgeDocs, setKnowledgeDocs] = useState<KnowledgeDocument[]>([]);
+  const [knowledgeResult, setKnowledgeResult] = useState<KnowledgeSearch | null>(null);
+  const [knowledgeSource, setKnowledgeSource] = useState<KnowledgeSource | null>(null);
+  const [knowledgeMode, setKnowledgeMode] = useState<RetrievalMode>("hybrid");
+  const [knowledgeAnswer, setKnowledgeAnswer] = useState<KnowledgeAnswer | null>(null);
+  const [knowledgeHistory, setKnowledgeHistory] = useState<
+    { role: "user" | "assistant"; content: string }[]
+  >([]);
+  const [knowledgeBusy, setKnowledgeBusy] = useState(false);
+  const [knowledgeError, setKnowledgeError] = useState("");
+  const knowledgeRequest = useRef(0);
+  const knowledgeDocumentsRequest = useRef(0);
   const revisionRef = useRef(0);
   const notify = (message: string) => setToast(message);
   const refresh = () => setRevision((v) => v + 1);
   const go = (page: string) => {
+	knowledgeRequest.current++;
     location.hash = page;
     setSearch("");
     setTab("handouts");
+    setKnowledgeResult(null);
+    setKnowledgeSource(null);
+    setKnowledgeAnswer(null);
+    setKnowledgeHistory([]);
+    setKnowledgeDocs([]);
     setMenu(false);
   };
   useEffect(() => {
@@ -414,6 +437,31 @@ function App() {
       revisionRef.current++;
     };
   }, [user, route, revision]);
+  useEffect(() => {
+    if (tab !== "knowledge" || !detail) return;
+    const request = ++knowledgeDocumentsRequest.current;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    setKnowledgeError("");
+    const load = () =>
+      api<{ documents: KnowledgeDocument[] }>(
+        `/classes/${detail.classroom.id}/knowledge/documents`,
+      )
+        .then((data) => {
+          if (request !== knowledgeDocumentsRequest.current) return;
+          setKnowledgeDocs(data.documents);
+          if (data.documents.some((item) => ["queued", "extracting", "embedding"].includes(item.status)))
+            timer = setTimeout(load, 2000);
+        })
+        .catch((error) => {
+          if (request === knowledgeDocumentsRequest.current)
+            setKnowledgeError((error as Error).message);
+        });
+    load();
+    return () => {
+      knowledgeDocumentsRequest.current++;
+      if (timer) clearTimeout(timer);
+    };
+  }, [tab, detail, revision]);
   const open = (d: Dialog) => {
     setFormError("");
     setSelectedFile(null);
@@ -516,6 +564,310 @@ function App() {
         加入班级
       </button>
     );
+  const indexDocument = async (handoutID: string) => {
+    if (!detail) return;
+    setKnowledgeBusy(true);
+    setKnowledgeError("");
+    try {
+      await api(
+        `/classes/${detail.classroom.id}/knowledge/documents/${handoutID}/index`,
+        json("POST"),
+      );
+      notify("索引任务已加入队列");
+      refresh();
+    } catch (error) {
+      setKnowledgeError((error as Error).message);
+    } finally {
+      setKnowledgeBusy(false);
+    }
+  };
+  const searchKnowledge = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!detail) return;
+    const form = new FormData(event.currentTarget);
+    const query = String(form.get("query") || "").trim();
+    if (!query) return;
+    const request = ++knowledgeRequest.current;
+    setKnowledgeBusy(true);
+    setKnowledgeError("");
+    setKnowledgeSource(null);
+    setKnowledgeAnswer(null);
+    setKnowledgeHistory([]);
+    try {
+      const result = await api<KnowledgeSearch>(
+        `/classes/${detail.classroom.id}/knowledge/search`,
+        json("POST", { query, mode: knowledgeMode, top_k: 5 }),
+      );
+      if (request === knowledgeRequest.current) setKnowledgeResult(result);
+    } catch (error) {
+      if (request === knowledgeRequest.current)
+        setKnowledgeError((error as Error).message);
+    } finally {
+      if (request === knowledgeRequest.current) setKnowledgeBusy(false);
+    }
+  };
+  // 先检索后生成：无命中时接口直接返回固定文案，不会调用生成模型。
+  const askKnowledge = async (form: HTMLFormElement | null) => {
+    if (!detail || !form) return;
+    const query = String(new FormData(form).get("query") || "").trim();
+    if (!query) return;
+    const request = ++knowledgeRequest.current;
+    setKnowledgeBusy(true);
+    setKnowledgeError("");
+    setKnowledgeSource(null);
+    setKnowledgeAnswer(null);
+    try {
+      const result = await api<KnowledgeAnswer>(
+        `/classes/${detail.classroom.id}/knowledge/ask`,
+        // 只把最近几轮附在切片之后，便于连续追问；服务端仍以最新一句重新检索。
+        json("POST", { query, history: knowledgeHistory.slice(-6) }),
+      );
+      if (request === knowledgeRequest.current) {
+        setKnowledgeAnswer(result);
+        setKnowledgeHistory((turns) =>
+          [
+            ...turns,
+            { role: "user" as const, content: query },
+            { role: "assistant" as const, content: result.answer },
+          ].slice(-6),
+        );
+      }
+    } catch (error) {
+      if (request === knowledgeRequest.current)
+        setKnowledgeError((error as Error).message);
+    } finally {
+      if (request === knowledgeRequest.current) setKnowledgeBusy(false);
+    }
+  };
+  const openKnowledgeSource = async (chunkID: string) => {
+    if (!detail) return;
+	const request = ++knowledgeRequest.current;
+    setKnowledgeBusy(true);
+    setKnowledgeError("");
+    try {
+	  const source = await api<KnowledgeSource>(
+          `/classes/${detail.classroom.id}/knowledge/chunks/${chunkID}/source`,
+		);
+	  if (request === knowledgeRequest.current) setKnowledgeSource(source);
+    } catch (error) {
+	  if (request === knowledgeRequest.current)
+		setKnowledgeError((error as Error).message);
+    } finally {
+	  if (request === knowledgeRequest.current) setKnowledgeBusy(false);
+    }
+  };
+  const modeLabels: Record<string, string> = {
+    keyword: "关键字",
+    vector: "语义",
+    hybrid: "混合",
+  };
+  const knowledgeLabels: Record<string, string> = {
+    not_indexed: "待建立",
+    queued: "排队中",
+    extracting: "正在解析",
+    embedding: "正在向量化",
+    ready: "可检索",
+    failed: "建立失败",
+    unsupported: "不可索引",
+    paused: "归档暂停",
+  };
+  const knowledgeErrors: Record<string, string> = {
+    no_text: "无可提取文本，本期不支持 OCR",
+    unsupported: "文件加密、损坏或无法解析",
+    resource_limit: "文档处理超过资源上限",
+    temporary_failure: "本地模型暂不可用，可稍后重试",
+    source_changed: "讲义内容已变化，请重新建立",
+  };
+  const renderKnowledge = () => (
+    <div className="knowledge-layout">
+      <div className="knowledge-main">
+        <div className="section-heading knowledge-heading">
+          <div>
+            <h2>班级知识库</h2>
+            <p>在本班讲义原文中查找内容，每条结果都能核对出处。</p>
+          </div>
+          <span className="knowledge-coverage">
+            {knowledgeDocs.filter((item) => item.has_ready_index).length}/
+            {knowledgeDocs.length} 份可检索
+          </span>
+        </div>
+        <form className="knowledge-search" onSubmit={searchKnowledge}>
+          <Search size={19} />
+          <input
+            name="query"
+            aria-label="检索班级讲义"
+            placeholder="例如：课程的考核方式是什么？"
+            maxLength={1000}
+            required
+          />
+          <button className="primary" disabled={knowledgeBusy}>
+            {knowledgeBusy ? <LoaderCircle size={17} className="spin" /> : "开始检索"}
+          </button>
+          <button
+            type="button"
+            className="secondary"
+            disabled={knowledgeBusy}
+            onClick={(event) => askKnowledge(event.currentTarget.form)}
+          >
+            生成回答
+          </button>
+        </form>
+        <div className="knowledge-modes" role="group" aria-label="检索模式">
+          {(
+            [
+              ["keyword", "关键字"],
+              ["vector", "语义"],
+              ["hybrid", "混合"],
+            ] as [RetrievalMode, string][]
+          ).map(([value, label]) => (
+            <button
+              type="button"
+              key={value}
+              className={knowledgeMode === value ? "mode active" : "mode"}
+              aria-pressed={knowledgeMode === value}
+              disabled={knowledgeBusy}
+              onClick={() => {
+                knowledgeRequest.current++;
+                setKnowledgeMode(value);
+                setKnowledgeResult(null);
+                setKnowledgeSource(null);
+                setKnowledgeAnswer(null);
+                setKnowledgeHistory([]);
+              }}
+            >
+              {label}
+            </button>
+          ))}
+          <small>
+            {knowledgeMode === "keyword"
+              ? "只匹配原文中的词，不调用嵌入服务。"
+              : knowledgeMode === "vector"
+                ? "按语义相似度查找，低于阈值的候选不保留。"
+                : "关键字与语义两路融合，两路都命中的排在前面。"}
+          </small>
+        </div>
+        {knowledgeAnswer && (
+          <section className="knowledge-answer" aria-label="简短回答">
+            <div className="knowledge-answer-head">
+              <strong>简短回答</strong>
+              <span>
+                {knowledgeAnswer.status === "ok"
+                  ? `依据 ${knowledgeAnswer.citations.length} 条切片 · ${modeLabels[knowledgeAnswer.mode] || knowledgeAnswer.mode}检索`
+                  : "资料中未找到相关内容"}
+              </span>
+            </div>
+            <p>{knowledgeAnswer.answer}</p>
+            {knowledgeAnswer.citations.length > 0 && (
+              <ol className="knowledge-citations">
+                {knowledgeAnswer.citations.map((citation) => (
+                  <li key={citation.chunk_id}>
+                    <span className="citation-index">[{citation.index}]</span>
+                    <div>
+                      <strong>{citation.title}</strong>
+                      <small>
+                        第 {citation.ordinal} 片 · 第 {citation.char_start + 1}–{citation.char_end} 字 · {citation.locator.label}
+                      </small>
+                      <p>{citation.content}</p>
+                      <div className="citation-actions">
+                        <button className="text-button" onClick={() => openKnowledgeSource(citation.chunk_id)}>
+                          <FileText size={15} /> 查看原文出处
+                        </button>
+                        <a className="text-button" href={citation.download_url}>
+                          <Download size={15} /> 下载原文件
+                        </a>
+                      </div>
+                    </div>
+                  </li>
+                ))}
+              </ol>
+            )}
+          </section>
+        )}
+        {knowledgeError && <p className="error knowledge-error" role="alert">{knowledgeError}</p>}
+        {knowledgeResult?.partial && (
+          <p className="knowledge-notice">
+            当前仅检索 {knowledgeResult.ready_documents}/{knowledgeResult.total_documents} 份讲义，结果覆盖尚不完整。
+          </p>
+        )}
+        {knowledgeResult?.status === "no_ready_documents" ? (
+          <Empty title="还没有可检索的讲义" description="教师可在右侧为讲义建立索引。" />
+        ) : knowledgeResult?.status === "no_matches" ? (
+          <Empty
+            title={knowledgeResult.message || "资料中未找到相关内容"}
+            description="换一个更具体的关键词或问题试试。"
+          />
+        ) : (
+          <div className="knowledge-results">
+            {knowledgeResult && knowledgeResult.hits.length > 0 && (
+              <p className="knowledge-notice">
+                本轮使用{modeLabels[knowledgeResult.mode] || knowledgeResult.mode}模式，共 {knowledgeResult.hits.length} 条命中。
+              </p>
+            )}
+            {knowledgeResult?.hits.map((result) => (
+              <article className="knowledge-result" key={result.chunk_id}>
+                <div className="knowledge-result-meta">
+                  <strong>{result.title}</strong>
+                  <span>{result.locator.label}</span>
+                  <span>
+                    第 {result.ordinal} 片 · 第 {result.char_start + 1}–{result.char_end} 字
+                  </span>
+                  {result.locator.converted && <span>经格式转换提取</span>}
+                </div>
+                <p>{result.content}</p>
+                <button className="text-button" onClick={() => openKnowledgeSource(result.chunk_id)}>
+                  <FileText size={15} /> 查看原文出处
+                </button>
+              </article>
+            ))}
+          </div>
+        )}
+      </div>
+      <aside className="knowledge-side">
+        <h3>{knowledgeSource ? "来源详情" : "讲义索引"}</h3>
+        {knowledgeSource ? (
+          <div className="source-card">
+            <strong>{knowledgeSource.title}</strong>
+            <span>{knowledgeSource.filename}</span>
+            <span>{knowledgeSource.locator.label}</span>
+            <p>{knowledgeSource.content}</p>
+            <small>内容版本 {knowledgeSource.content_version.slice(0, 12)}</small>
+            <div className="source-actions">
+              {knowledgeSource.filename.toLowerCase().endsWith(".pdf") && (
+                <a className="secondary" target="_blank" rel="noreferrer" href={`${knowledgeSource.download_url}?preview=1#page=${knowledgeSource.locator.start}`}>
+                  <Eye size={15} /> 定位预览
+                </a>
+              )}
+              <a className="secondary" href={knowledgeSource.download_url}>
+                <Download size={15} /> 下载原文件
+              </a>
+              <button className="text-button" onClick={() => setKnowledgeSource(null)}>返回索引状态</button>
+            </div>
+          </div>
+        ) : knowledgeDocs.length === 0 ? (
+          <p className="knowledge-muted">班级还没有讲义。</p>
+        ) : (
+          <div className="knowledge-documents">
+            {knowledgeDocs.map((document) => (
+              <div className="knowledge-document" key={document.handout_id}>
+                <div>
+                  <strong>{document.title}</strong>
+                  <span>{knowledgeLabels[document.status] || document.status}</span>
+                  {document.error_code && <small>{knowledgeErrors[document.error_code] || "处理失败，请重试"}</small>}
+                  {document.chunk_note && <small>{document.chunk_note}</small>}
+                  {document.has_ready_index && document.status !== "ready" && <small>旧索引仍可检索</small>}
+                </div>
+                {user?.id === detail?.classroom.owner_id && !detail?.classroom.archived && ["not_indexed", "failed", "unsupported", "ready"].includes(document.status) && (
+                  <button className="text-button" disabled={knowledgeBusy} onClick={() => indexDocument(document.handout_id)}>
+                    {document.status === "ready" ? "重建" : "建立索引"}
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </aside>
+    </div>
+  );
   const renderHandouts = (items: Handout[], global = false) => (
     <div className="materials">
       {items.length === 0 ? (
@@ -870,6 +1222,15 @@ function App() {
                           班级讲义 <span>{detail.handouts.length}</span>
                         </button>
                         <button
+                          className={tab === "knowledge" ? "active" : ""}
+                          onClick={() => {
+                            setTab("knowledge");
+                            setKnowledgeSource(null);
+                          }}
+                        >
+                          知识库
+                        </button>
+                        <button
                           className={tab === "members" ? "active" : ""}
                           onClick={() => setTab("members")}
                         >
@@ -903,6 +1264,8 @@ function App() {
                           </div>
                           {renderHandouts(detail.handouts)}
                         </>
+                      ) : tab === "knowledge" ? (
+                        renderKnowledge()
                       ) : tab === "members" ? (
                         <>
                           <div className="section-heading">

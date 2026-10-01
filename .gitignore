@@ -1,6 +1,10 @@
 node_modules/
 dist/
 .tools/
+# Portable MySQL 8.4 runtime extracted by scripts/mysql-runtime.mjs (.tools/ is ignored as a whole).
+.tools/mysql/
+# Portable Qdrant binary extracted by scripts/qdrant-runtime.mjs.
+.tools/qdrant/
 .local/
 .env
 .env.*

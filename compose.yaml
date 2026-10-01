@@ -1,35 +1,87 @@
 name: zhixu-teaching
+
+# 应用服务共用的环境变量。密钥一律由 .env 提供，不写入仓库。
+x-app-environment: &app-environment
+  DATABASE_URL: "teaching:${DB_PASSWORD:?Run scripts/setup.ps1 first}@tcp(db:3306)/teaching?parseTime=true&loc=UTC&charset=utf8mb4"
+  ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+  ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Run scripts/setup.ps1 first}
+  APP_ORIGIN: ${APP_ORIGIN:-http://localhost:8080}
+  UPLOAD_DIR: /data/uploads
+  KNOWLEDGE_ENABLED: 'true'
+  QDRANT_URL: http://qdrant:6333
+  QDRANT_COLLECTION: ${QDRANT_COLLECTION:-campusclaw_chunks}
+  GATEWAY_BASE_URL: ${GATEWAY_BASE_URL:-}
+  GATEWAY_API_KEY: ${GATEWAY_API_KEY:-}
+  # 嵌入与对话是两个独立模块，可分别指向不同服务端；未单独配置时沿用 GATEWAY_*。
+  EMBEDDING_BASE_URL: ${EMBEDDING_BASE_URL:-}
+  EMBEDDING_API_KEY: ${EMBEDDING_API_KEY:-}
+  EMBEDDING_MODEL: ${EMBEDDING_MODEL:-}
+  EMBEDDING_DIMENSIONS: ${EMBEDDING_DIMENSIONS:-1024}
+  EMBEDDING_PROFILE_ID: ${EMBEDDING_PROFILE_ID:-gateway-embedding-v1}
+  CHAT_BASE_URL: ${CHAT_BASE_URL:-}
+  CHAT_API_KEY: ${CHAT_API_KEY:-}
+  CHAT_MODEL: ${CHAT_MODEL:-}
+  GATEWAY_TIMEOUT: ${GATEWAY_TIMEOUT:-30s}
+  # 种子材料导入：默认打开，示例班级名可配置；worker 显式关闭，避免重复导入。
+  SEED_ENABLED: ${SEED_ENABLED:-true}
+  SEED_DIR: /data/seeds
+  SEED_CLASS_NAME: ${SEED_CLASS_NAME:-示例班级}
+
 services:
   db:
-    image: postgres:18-alpine
+    image: mysql:8.4
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_0900_ai_ci
+      - --ngram_token_size=2
+      - --default-time-zone=+00:00
+      - --skip-name-resolve
     environment:
-      POSTGRES_DB: teaching
-      POSTGRES_USER: teaching
-      POSTGRES_PASSWORD: ${DB_PASSWORD:?Run scripts/setup.ps1 first}
+      MYSQL_DATABASE: teaching
+      MYSQL_USER: teaching
+      MYSQL_PASSWORD: ${DB_PASSWORD:?Run scripts/setup.ps1 first}
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?Run scripts/setup.ps1 first}
     volumes:
-      - database:/var/lib/postgresql
+      - mysql-data:/var/lib/mysql
     healthcheck:
-      test: [CMD-SHELL, 'pg_isready -U teaching -d teaching']
+      test: [CMD-SHELL, 'mysql -h 127.0.0.1 -u"$$MYSQL_USER" -p"$$MYSQL_PASSWORD" -e "SELECT 1" >/dev/null 2>&1']
       interval: 5s
       timeout: 5s
-      retries: 20
+      retries: 30
+      start_period: 30s
     restart: unless-stopped
+    networks:
+      - app
+
+  qdrant:
+    image: qdrant/qdrant:v1.15.1
+    volumes:
+      - qdrant-data:/qdrant/storage
+    healthcheck:
+      test: [CMD-SHELL, "bash -c ':> /dev/tcp/127.0.0.1/6333' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+    restart: unless-stopped
+    networks:
+      - app
+
   api:
     build:
       context: ./backend
       args:
         GOPROXY: ${GOPROXY:-https://proxy.golang.org,direct}
     environment:
-      DATABASE_URL: postgres://teaching:${DB_PASSWORD}@db:5432/teaching?sslmode=disable
-      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Run scripts/setup.ps1 first}
-      APP_ORIGIN: ${APP_ORIGIN:-http://localhost:8080}
+      <<: *app-environment
       COOKIE_SECURE: 'false'
-      UPLOAD_DIR: /data/uploads
     volumes:
       - uploads:/data/uploads
+      - ./seeds:/data/seeds:ro
     depends_on:
       db:
+        condition: service_healthy
+      qdrant:
         condition: service_healthy
     healthcheck:
       test: [CMD, /app/server, healthcheck]
@@ -38,6 +90,40 @@ services:
       retries: 10
       start_period: 15s
     restart: unless-stopped
+    networks:
+      - app
+
+  worker:
+    build:
+      context: ./backend
+      args:
+        GOPROXY: ${GOPROXY:-https://proxy.golang.org,direct}
+    command: [worker]
+    environment:
+      <<: *app-environment
+      SEED_ENABLED: 'false'
+    volumes:
+      - uploads:/data/uploads:ro
+    depends_on:
+      db:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+    read_only: true
+    tmpfs:
+      - /tmp:size=512m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: [CMD, /app/server, worker-healthcheck]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    networks:
+      - app
+
   web:
     build: ./frontend
     ports:
@@ -51,6 +137,20 @@ services:
       timeout: 5s
       retries: 5
     restart: unless-stopped
+    # web 必须同时接入 app 与 edge：当前 Docker 不允许在 internal 网络上发布宿主端口，
+    # 只有接入非 internal 网络才能把 127.0.0.1:8080 映射出去。其余服务仍只在 app 上。
+    networks:
+      - app
+      - edge
+
 volumes:
-  database:
+  mysql-data:
+  qdrant-data:
   uploads:
+  # 迁移前的 PostgreSQL 数据卷，保留用于回滚；不要删除，也不要用它承载 MySQL 数据。
+  database:
+
+networks:
+  app:
+    internal: true
+  edge:

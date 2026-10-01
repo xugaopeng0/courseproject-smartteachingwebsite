@@ -1,13 +1,14 @@
 package main
 
 import (
+	"database/sql"
 	"errors"
-	"github.com/jackc/pgx/v5"
-	"golang.org/x/crypto/bcrypt"
 	"net/http"
 	"regexp"
 	"strings"
 	"unicode/utf8"
+
+	"golang.org/x/crypto/bcrypt"
 )
 
 type credentials struct {
@@ -39,7 +40,7 @@ func (a *App) addUser(r *http.Request, c credentials, role string) (User, error)
 	if err != nil {
 		return u, err
 	}
-	_, err = a.db.Exec(r.Context(), `INSERT INTO users(id,username,name,password_hash,role) VALUES($1,$2,$3,$4,$5)`, u.ID, u.Username, u.Name, string(hash), role)
+	_, err = a.db.ExecContext(r.Context(), `INSERT INTO users(id,username,name,password_hash,role) VALUES(?,?,?,?,?)`, u.ID, u.Username, u.Name, string(hash), role)
 	if conflict(err) {
 		return u, fail(409, "该账号已被使用")
 	}
@@ -72,8 +73,8 @@ func (a *App) login(w http.ResponseWriter, r *http.Request, _ *User) error {
 	}
 	u := User{}
 	var hash string
-	err := a.db.QueryRow(r.Context(), `SELECT id,username,name,role,password_hash FROM users WHERE username=$1`, strings.ToLower(strings.TrimSpace(c.Username))).Scan(&u.ID, &u.Username, &u.Name, &u.Role, &hash)
-	if errors.Is(err, pgx.ErrNoRows) {
+	err := a.db.QueryRowContext(r.Context(), `SELECT id,username,name,role,password_hash FROM users WHERE username=?`, strings.ToLower(strings.TrimSpace(c.Username))).Scan(&u.ID, &u.Username, &u.Name, &u.Role, &hash)
+	if errors.Is(err, sql.ErrNoRows) {
 		_ = bcrypt.CompareHashAndPassword(dummyHash, []byte(c.Password))
 		return fail(401, "账号或密码错误")
 	}
@@ -107,7 +108,7 @@ func (a *App) teachers(w http.ResponseWriter, r *http.Request, u *User) error {
 	if u.Role != "admin" {
 		return fail(403, "无权访问")
 	}
-	rows, err := a.db.Query(r.Context(), `SELECT id,username,name,role FROM users WHERE role='teacher' ORDER BY created_at DESC`)
+	rows, err := a.db.QueryContext(r.Context(), `SELECT id,username,name,role FROM users WHERE role='teacher' ORDER BY created_at DESC`)
 	if err != nil {
 		return err
 	}

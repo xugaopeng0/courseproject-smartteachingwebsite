@@ -3,24 +3,17 @@ import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { mkdtemp, mkdir } from "node:fs/promises";
 import { resolve } from "node:path";
-import EmbeddedPostgres, { runtimeDirectory } from "./postgres-runtime.mjs";
+import LocalMySQL, { runtimeDirectory } from "./mysql-runtime.mjs";
 const root = resolve(import.meta.dirname, "..");
 await mkdir(resolve(root, ".local"), { recursive: true });
 await mkdir(runtimeDirectory, { recursive: true });
 const dir = await mkdtemp(resolve(runtimeDirectory, "integration-"));
-const pg = new EmbeddedPostgres({
+const mysql = new LocalMySQL({
   databaseDir: resolve(dir, "db"),
-  user: "postgres",
-  password: "integration-only-db",
   port: 55433,
-  persistent: true,
-  initdbFlags: ["--encoding=UTF8", "--locale=C"],
-  onLog: () => {},
-  onError: (m) => {
-    if (String(m).includes("FATAL")) console.error(m);
-  },
+  database: "teaching",
 });
-let server, client;
+let server;
 let checks = 0;
 const base = "http://127.0.0.1:8082/api";
 function agent() {
@@ -84,8 +77,7 @@ async function startServer() {
       windowsHide: true,
       env: {
         ...process.env,
-        DATABASE_URL:
-          "postgres://postgres:integration-only-db@127.0.0.1:55433/postgres?sslmode=disable",
+        DATABASE_URL: mysql.databaseUrl,
         ADMIN_PASSWORD: "integration-admin-pass",
         UPLOAD_DIR: resolve(dir, "uploads"),
         APP_ORIGIN: "http://127.0.0.1:8082",
@@ -114,8 +106,8 @@ async function stopServer() {
   }
 }
 try {
-  await pg.initialise();
-  await pg.start();
+  await mysql.initialise();
+  await mysql.start();
   await startServer();
   const guest = agent(),
     admin = agent(),
@@ -336,22 +328,23 @@ try {
     username: "student_a",
     password: "test-password",
   });
-  client = pg.getPgClient();
-  await client.connect();
-  await client.query(
-    "UPDATE sessions SET expires_at=now()-interval '1 hour' WHERE user_id=$1",
-    [me.id],
+  // Sessions live in MySQL; expire this user's rows through mysql.exe.
+  await mysql.query(
+    `UPDATE sessions s JOIN users u ON u.id = s.user_id
+      SET s.expires_at = UTC_TIMESTAMP() - INTERVAL 1 HOUR
+      WHERE u.username = 'student_a'`,
   );
   await student.req("/auth/me", "GET", undefined, 401);
-  const hashes = await client.query("SELECT password_hash FROM users");
-  assert.ok(hashes.rows.every((r) => r.password_hash.startsWith("$2")));
-  await client.end();
-  client = null;
+  const hashes = await mysql.query("SELECT password_hash FROM users");
+  assert.ok(hashes.length > 0, "users table should hold rows");
+  assert.ok(
+    hashes.split(/\r?\n/).every((hash) => hash.startsWith("$2")),
+    "all password hashes should be bcrypt: " + hashes,
+  );
   console.log(
-    `PASS: ${checks} real-PostgreSQL HTTP checks; roles, CSRF, sessions, classrooms, uploads, authorization and restart persistence.`,
+    `PASS: ${checks} real-MySQL HTTP checks; roles, CSRF, sessions, classrooms, uploads, authorization and restart persistence.`,
   );
 } finally {
-  if (client) await client.end();
   await stopServer();
-  await pg.stop();
+  await mysql.stop();
 }

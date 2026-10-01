@@ -13,9 +13,11 @@ function New-LocalSecret {
     return ([BitConverter]::ToString($bytes)).Replace('-', '').ToLowerInvariant()
 }
 $dbSecret = New-LocalSecret
+$dbRootSecret = New-LocalSecret
 $adminSecret = New-LocalSecret
 $content = @"
 DB_PASSWORD=$dbSecret
+DB_ROOT_PASSWORD=$dbRootSecret
 ADMIN_USERNAME=admin
 ADMIN_PASSWORD=$adminSecret
 APP_ORIGIN=http://localhost:8080

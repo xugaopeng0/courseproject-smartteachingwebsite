@@ -4,9 +4,10 @@ import (
 	"archive/zip"
 	"bufio"
 	"bytes"
+	"database/sql"
 	"errors"
-	"github.com/jackc/pgx/v5"
 	"io"
+	"log"
 	"mime"
 	"net/http"
 	"os"
@@ -97,15 +98,15 @@ func validDocument(path, ext string) bool {
 	return hasType && hasDoc
 }
 func (a *App) upload(w http.ResponseWriter, r *http.Request, u *User) error {
-	tx, err := a.db.Begin(r.Context())
+	tx, err := a.db.BeginTx(r.Context(), nil)
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback(r.Context())
+	defer tx.Rollback()
 	var owner string
 	var archived bool
-	err = tx.QueryRow(r.Context(), `SELECT owner_id,archived FROM classrooms WHERE id=$1 FOR UPDATE`, r.PathValue("id")).Scan(&owner, &archived)
-	if errors.Is(err, pgx.ErrNoRows) {
+	err = tx.QueryRowContext(r.Context(), `SELECT owner_id,archived FROM classrooms WHERE id=? FOR UPDATE`, r.PathValue("id")).Scan(&owner, &archived)
+	if errors.Is(err, sql.ErrNoRows) {
 		return fail(404, "班级不存在")
 	}
 	if err != nil {
@@ -183,11 +184,20 @@ func (a *App) upload(w http.ResponseWriter, r *http.Request, u *User) error {
 		return fail(400, "文件内容与格式不匹配或文档已损坏")
 	}
 	id := randomID(16)
-	_, err = tx.Exec(r.Context(), `INSERT INTO handouts(id,class_id,title,filename,stored_name,size,mime) VALUES($1,$2,$3,$4,$5,$6,$7)`, id, r.PathValue("id"), title, filename, stored, size, mt)
+	_, err = tx.ExecContext(r.Context(), `INSERT INTO handouts(id,class_id,title,filename,stored_name,size,mime) VALUES(?,?,?,?,?,?,?)`, id, r.PathValue("id"), title, filename, stored, size, mt)
 	if err != nil {
 		return err
 	}
-	if err = tx.Commit(r.Context()); err != nil {
+	if a.knowledge {
+		hash, hashErr := fileHash(path)
+		if hashErr != nil {
+			return hashErr
+		}
+		if err = a.queueKnowledgeForUpload(r.Context(), tx, id, r.PathValue("id"), hash); err != nil {
+			return err
+		}
+	}
+	if err = tx.Commit(); err != nil {
 		return err
 	}
 	keep = true
@@ -195,7 +205,7 @@ func (a *App) upload(w http.ResponseWriter, r *http.Request, u *User) error {
 	return nil
 }
 func (a *App) listHandouts(r *http.Request, id string) ([]Handout, error) {
-	rows, err := a.db.Query(r.Context(), `SELECT id,class_id,title,filename,size,mime,uploaded_at FROM handouts WHERE class_id=$1 ORDER BY uploaded_at DESC`, id)
+	rows, err := a.db.QueryContext(r.Context(), `SELECT id,class_id,title,filename,size,mime,uploaded_at FROM handouts WHERE class_id=? ORDER BY uploaded_at DESC`, id)
 	if err != nil {
 		return nil, err
 	}
@@ -212,8 +222,8 @@ func (a *App) listHandouts(r *http.Request, id string) ([]Handout, error) {
 }
 func (a *App) download(w http.ResponseWriter, r *http.Request, u *User) error {
 	var classID, filename, stored, mt string
-	err := a.db.QueryRow(r.Context(), `SELECT class_id,filename,stored_name,mime FROM handouts WHERE id=$1`, r.PathValue("id")).Scan(&classID, &filename, &stored, &mt)
-	if errors.Is(err, pgx.ErrNoRows) {
+	err := a.db.QueryRowContext(r.Context(), `SELECT class_id,filename,stored_name,mime FROM handouts WHERE id=?`, r.PathValue("id")).Scan(&classID, &filename, &stored, &mt)
+	if errors.Is(err, sql.ErrNoRows) {
 		return fail(404, "讲义不存在")
 	}
 	if err != nil {
@@ -242,15 +252,16 @@ func (a *App) download(w http.ResponseWriter, r *http.Request, u *User) error {
 	return nil
 }
 func (a *App) deleteHandout(w http.ResponseWriter, r *http.Request, u *User) error {
-	tx, err := a.db.Begin(r.Context())
+	tx, err := a.db.BeginTx(r.Context(), nil)
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback(r.Context())
-	var stored, owner string
+	defer tx.Rollback()
+	var stored, owner, classID string
 	var archived bool
-	err = tx.QueryRow(r.Context(), `SELECT h.stored_name,c.owner_id,c.archived FROM handouts h JOIN classrooms c ON c.id=h.class_id WHERE h.id=$1 FOR UPDATE OF c,h`, r.PathValue("id")).Scan(&stored, &owner, &archived)
-	if errors.Is(err, pgx.ErrNoRows) {
+	// MySQL 不支持 PostgreSQL 的 FOR UPDATE OF，这里锁住联接中涉及的两张表。
+	err = tx.QueryRowContext(r.Context(), `SELECT h.stored_name,c.owner_id,h.class_id,c.archived FROM handouts h JOIN classrooms c ON c.id=h.class_id WHERE h.id=? FOR UPDATE`, r.PathValue("id")).Scan(&stored, &owner, &classID, &archived)
+	if errors.Is(err, sql.ErrNoRows) {
 		return fail(404, "讲义不存在")
 	}
 	if err != nil {
@@ -262,14 +273,20 @@ func (a *App) deleteHandout(w http.ResponseWriter, r *http.Request, u *User) err
 	if archived {
 		return fail(409, "请先恢复班级")
 	}
-	if _, err = tx.Exec(r.Context(), `DELETE FROM handouts WHERE id=$1`, r.PathValue("id")); err != nil {
+	if _, err = tx.ExecContext(r.Context(), `DELETE FROM handouts WHERE id=?`, r.PathValue("id")); err != nil {
 		return err
 	}
-	if err = tx.Commit(r.Context()); err != nil {
+	if err = tx.Commit(); err != nil {
 		return err
 	}
 	if err = os.Remove(filepath.Join(a.uploads, stored)); err != nil && !os.IsNotExist(err) {
 		return err
+	}
+	if a.knowledge && a.vectors != nil {
+		// 关系库已经删除；向量库里即使有残留点，也会因回表校验失败而不可见。
+		if cleanupErr := a.vectors.deleteByHandout(r.Context(), classID, r.PathValue("id")); cleanupErr != nil {
+			log.Printf("delete handout vectors: %v", cleanupErr)
+		}
 	}
 	writeJSON(w, 200, map[string]bool{"ok": true})
 	return nil

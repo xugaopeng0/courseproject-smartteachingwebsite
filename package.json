@@ -7,14 +7,14 @@
     "build": "npm --prefix frontend run build",
     "spec:validate": "openspec validate --all --strict",
     "test:e2e": "node scripts/integration.mjs",
+    "test:db": "node scripts/test-db.mjs",
     "test:browser": "node scripts/browser-test.mjs",
+    "test:knowledge": "node scripts/knowledge-test.mjs",
     "dev:local": "node scripts/local-dev.mjs"
   },
   "devDependencies": {
     "@fission-ai/openspec": "1.13.1",
     "@playwright/test": "^1.55.0",
-    "embedded-postgres": "^18.4.0-beta.17",
-    "pg": "^8.23.0",
     "prettier": "^3.9.8"
   }
 }
