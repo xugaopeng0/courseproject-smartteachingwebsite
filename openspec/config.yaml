@@ -9,10 +9,16 @@ context: |
   UI: white primary surfaces, red accents, responsive Chinese interface.
   Embeddings and chat are called from the server side only, through a course gateway
   compatible with the OpenAI API; keys never reach the browser.
-  Implemented scope: authentication, classrooms, private handout uploads, class-scoped
-  knowledge ingestion with configurable chunking and seed material import.
-  In flight: three retrieval modes (knowledge-retrieval-modes) and answer generation
-  with citations (knowledge-answer-citations).
+  Implemented scope: authentication (password sessions), classrooms, private handout uploads,
+  class-scoped knowledge ingestion with configurable chunking and seed material import,
+  three retrieval modes (keyword/vector/hybrid) and one-shot answers with server-generated
+  citations. Archived changes live under openspec/changes/archive.
+  In flight (lesson 5: planning complete, implementation not started): solver-assistant
+  (teacher prompts plus a guidance-only skill, student chat sessions with SSE streaming and
+  citations, opaque Bearer tokens reusing the session table), openapi-swagger (OpenAPI 3.1
+  contract served with a self-hosted Swagger UI and a drift check), api-test-suite
+  (apitest/ with one script per endpoint, run_all.py and an HTML report, database-level
+  assertions).
 
 # Per-artifact rules (optional)
 # Add custom rules for specific artifacts.

@@ -49,13 +49,14 @@ func TestBuildAnswerMessages(t *testing.T) {
 		{ChunkID: "c2", Title: "实验手册", Ordinal: 5, CharStart: 300, CharEnd: 360, Content: "实验报告需要附上运行截图。"},
 	}
 	history := []chatMessage{{Role: "user", Content: "上一轮问题"}, {Role: "assistant", Content: "上一轮回答"}}
-	messages := buildAnswerMessages("考核怎么算？", rows, history)
+	systemPrompt := buildSystemPrompt("班级要求：只用中文", []promptRow{{Name: guidanceSkillName, Body: guidanceSkillBody}})
+	messages := buildAnswerMessages(systemPrompt, "考核怎么算？", rows, history)
 
 	if len(messages) != 2+len(history) {
 		t.Fatalf("消息数量不正确: %#v", messages)
 	}
-	if messages[0].Role != "system" || !strings.Contains(messages[0].Content, "[1]") {
-		t.Fatalf("首条应是服务端构造的系统提示: %#v", messages[0])
+	if messages[0].Role != "system" || !strings.Contains(messages[0].Content, "班级要求：只用中文") || !strings.Contains(messages[0].Content, guidanceSkillName) {
+		t.Fatalf("首条应是包含提示词与技能的系统提示: %#v", messages[0])
 	}
 	if messages[1].Content != "上一轮问题" || messages[2].Content != "上一轮回答" {
 		t.Fatalf("历史轮次应附在系统提示之后: %#v", messages)

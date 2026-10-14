@@ -12,6 +12,10 @@ dist/
 /uploads/
 /backend/uploads/
 *.exe
+# 接口测试：报告与虚拟环境都不提交
+/apitest/report/
+/apitest/.venv/
+__pycache__/
 playwright-report/
 test-results/
 *.tsbuildinfo

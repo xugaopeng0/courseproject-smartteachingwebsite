@@ -1,0 +1,5 @@
+{
+  "order": 80,
+  "path_params": { "id": "$class_id", "sid": "$session_id" },
+  "requires": ["class_id", "session_id"]
+}

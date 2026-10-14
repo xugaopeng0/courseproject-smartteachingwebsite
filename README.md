@@ -50,15 +50,17 @@ docker compose down               # 停止，保留数据卷
 
 | 角色 | 功能 |
 | --- | --- |
-| 管理员 | 账号密码登录；创建、查看教师账号；退出登录 |
-| 教师 | 创建和编辑班级；复制邀请码；查看、移除学生；归档和恢复班级；上传、下载、预览、删除讲义；管理知识索引；班级内检索与溯源 |
-| 学生 | 自助注册、登录；邀请码入班；查看成员；退出班级；下载讲义、预览 PDF；班级内检索与溯源 |
+| 管理员 | 账号密码登录；创建、查看教师账号；维护平台默认提示词与平台技能；退出登录 |
+| 教师 | 创建和编辑班级；复制邀请码；查看、移除学生；归档和恢复班级；上传、下载、预览、删除讲义；管理知识索引；班级内检索与溯源；设置本班提示词、启用／停用「解题引导」技能；在「解题助手」里连续提问并核对出处 |
+| 学生 | 自助注册、登录；邀请码入班；查看成员；退出班级；下载讲义、预览 PDF；班级内检索与溯源；在「解题助手」里流式提问、逐字看回答并核对出处 |
 
 上传支持 `.pdf`、`.doc`、`.docx`、`.ppt`、`.pptx`、`.txt`、`.md`（扩展名大小写不敏感），单文件最大 **50 MiB（界面简称 50 MB）**。后端检查扩展名、PDF/Office 文件签名及现代 Office ZIP 结构；TXT/MD 须为非空 **UTF-8** 文本（可带 BOM），拒绝无效编码、仅 BOM 和二进制控制字符，允许制表符、回车及换行。GBK/UTF-16 文件请另存为 UTF-8。PDF 使用浏览器原生预览；Office、TXT、MD 提供原文件下载，Markdown 不渲染为网页。班级归档后保留成员和讲义读取权限，禁止入班、编辑、上传、删除及教师移除成员；学生仍可主动退出。
 
 知识库的切片正文、权限元数据与任务保存在 MySQL 8.4；向量保存在 Qdrant 集合 `campusclaw_chunks`（余弦度量，维度取 `EMBEDDING_DIMENSIONS`，默认 1024），向量点主键就是切片标识，正文一律回 MySQL 读取。嵌入与对话都由服务端调用课程网关，密钥不下发浏览器。MySQL 侧还为切片正文建立了 ngram 全文索引（`--ngram_token_size=2`，按二字切词）。上传成功后正文先按约 800 个 Unicode 字符的滑动窗口切片、相邻约 10% 重叠，也支持空行／换行／句号分隔符或 Markdown 标题分章；每个切片记录 1 起始序号与在提取文本中的字符区间。PDF 按页、PPT/PPTX 按幻灯片、TXT/MD 按行、DOC/DOCX 按提取正文段落定位；DOC/PPT 会先在隔离 worker 中转换。扫描件和图片文字本期不做 OCR。检索支持关键字、语义与混合三种模式，只返回原文片段和出处；问答则先检索、只有命中切片时才把材料标题、切片序号与正文交给对话模型，回答用 `[1]` 标注出处，没有依据时直接返回「资料中未找到相关内容」且不调用生成模型。删除讲义或撤销成员权限后，旧引用也无法继续读取。
 
-本期不包含流式输出、交叉编码器重排序、跨班级知识库、OCR、作业、找回密码、邮箱验证、学校统一认证、批量导入、多教师和讲义版本管理。
+「解题助手」把上面的问答做成会话：学生新建会话后连续提问，回答以 SSE 逐块下发、逐字显示，结束后给出可核对的出处列表；中途可以「停止生成」，已收到的部分按中断状态保存，不会记成完整回答。回答前使用的提示词与技能由教师按班级设置：平台提供默认提示词与内置「解题引导」技能（只给思路与追问，不直接给最终答案），班级可以覆盖或停用。接口层面除了浏览器 Cookie，还可以用 `POST /api/auth/token` 换取 Bearer 令牌调用（供接口工具使用），令牌只存哈希、与浏览器会话共用撤销路径。
+
+本期不包含交叉编码器重排序、跨班级知识库、OCR、作业、找回密码、邮箱验证、学校统一认证、批量导入、多教师和讲义版本管理。
 
 ## 项目结构
 
@@ -109,9 +111,28 @@ npm run dev:local
 
 首次运行会从 `https://dev.mysql.com/get/Downloads/MySQL-8.4/mysql-8.4.6-winx64.zip` 下载约 249 MB 的 MySQL 8.4 Windows ZIP，解压到 `.tools/mysql`（与 `.tools/go` 一样不提交），随后初始化临时数据目录并在 **55432** 端口启动 `mysqld`，同时拉起 `.local/server.exe` 与 Vite，实测约 1 分钟（下载直连官方 CDN，慢时可能更久）。镜像不可达或过慢时可用 `MYSQL_ZIP_URL` 指定其它地址（默认地址 `HEAD` 会返回 403，`GET` 正常，不必因此更换镜像）。由于 `mysqld` 在非 ASCII 路径下会静默退出，运行时会把二进制的 `bin` 与 `share` 复制到系统临时目录 `%TEMP%\zhixu-<项目路径哈希>\mysql` 作为 basedir；之后每次启动只需约 3 秒。
 
-访问 **http://127.0.0.1:5173**。开发管理员账号为 `admin`，随机密码保存在 `.local/dev-credentials.json` 的 `admin` 字段中。这套开发数据和密码与 Docker 环境相互独立；开发 MySQL 在系统临时目录 `zhixu-<项目路径哈希>/development-db` 中持久保存，以绕过 Windows 中文路径问题。临时目录可能被系统清理，仅用于开发，被清理后重新初始化即可。讲义仍位于 `.local/uploads`。脚本同时会启动便携 Qdrant（16333），因此 API 会建好 `campusclaw_chunks` 集合；但因为没有配置课程网关，索引与语义检索仍不可用（页面会提示网关未配置，建立索引返回 503），需要完整检索能力时请用 Compose 部署并配置网关。
+访问 **http://127.0.0.1:5173**。开发管理员账号为 `admin`，随机密码保存在 `.local/dev-credentials.json` 的 `admin` 字段中。这套开发数据和密码与 Docker 环境相互独立；开发 MySQL 在系统临时目录 `zhixu-<项目路径哈希>/development-db` 中持久保存，以绕过 Windows 中文路径问题。临时目录可能被系统清理，仅用于开发，被清理后重新初始化即可。讲义仍位于 `.local/uploads`。脚本同时会启动便携 Qdrant（16333）与知识库 worker，因此上传的讲义会被真正切片与索引；索引与语义检索、问答仍需要可用的嵌入与对话通道（见下文“接口文档”一节的替身做法），未配置时页面会明确提示。
+
+## 接口文档与令牌
+
+接口契约是 `docs/openapi.json`（OpenAPI 3.1），随二进制提供：
+
+```powershell
+# 浏览器直接打开文档页面（页面与资源都自托管，不依赖外网 CDN）
+http://localhost:8080/api/docs          # Compose 部署
+http://127.0.0.1:8081/api/docs          # 本地 dev:local
+
+# 取一个 Bearer 令牌后，在页面右上角 Authorize 填入即可试调受保护接口
+curl -s -X POST http://localhost:8080/api/auth/token `
+  -H "Content-Type: application/json" `
+  -d '{"username":"admin","password":"<ADMIN_PASSWORD>"}'
+```
+
+编辑契约后运行 `node scripts/sync-openapi.mjs` 同步到 `backend/openapi.json` 与 `backend/swaggerui/`；`go test` 会校验副本未过期，并双向比对契约与路由表，避免文档漂移。
 
 浏览器回归测试：运行本地预览后执行 `node scripts/browser-test.mjs`。使用本机 Chrome 的无头模式，截图存入 `.local/screenshots`。
+
+接口测试套件：`npm run test:api`。一个接口一个脚本（`apitest/cases/api/login/POST.py` ↔ `POST /api/login`），一键跑完并生成自包含 HTML 报告 `apitest/report/index.html`（不提交）。不只对状态码：登录后核对 `sessions` 行、检索后核对切片属于本班、提示词写入后核对 `prompts` 行、发消息后核对 `chat_messages` 的顺序号与状态。详见 `apitest/README.md`。
 
 Docker 部署验收：`node scripts/deployment-test.mjs`。脚本读取本地 `.env`，在实际平台上创建临时教师、学生、班级及讲义，执行 `docker compose down` 和重新启动，验证数据保留与浏览器登录，最后清理本次创建的临时数据。**运行时会短暂停止本项目容器**，应在平台空闲时执行。
 

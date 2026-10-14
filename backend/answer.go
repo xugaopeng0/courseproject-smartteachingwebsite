@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -58,8 +59,9 @@ func normalizeHistory(history []chatMessage) []chatMessage {
 	return out
 }
 
-// buildAnswerMessages 组装对话输入：只包含材料标题、切片序号、切片正文、用户最新一句与此前轮次。
-func buildAnswerMessages(question string, rows []chunkRow, history []chatMessage) []chatMessage {
+// buildAnswerMessages 组装对话输入：系统提示（固定约束 + 提示词 + 技能）、此前轮次，
+// 以及包含材料标题、切片序号与正文的最新一句。MUST NOT 出现向量、其他班级切片或内部字段。
+func buildAnswerMessages(systemPrompt, question string, rows []chunkRow, history []chatMessage) []chatMessage {
 	var contextText strings.Builder
 	for i, row := range rows {
 		excerpt := row.Content
@@ -68,11 +70,7 @@ func buildAnswerMessages(question string, rows []chunkRow, history []chatMessage
 		}
 		fmt.Fprintf(&contextText, "[%d] 材料：%s（第 %d 片，第 %d–%d 字）\n%s\n\n", i+1, row.Title, row.Ordinal, row.CharStart+1, row.CharEnd, excerpt)
 	}
-	messages := []chatMessage{{
-		Role: "system",
-		Content: "你是课程资料助手。只能依据给出的本班材料片段用简短中文作答，并在句末用 [1]、[2] 这样的编号标注依据；" +
-			"材料中没有答案时直接说明材料中未找到相关内容；不要引用编号之外的材料，也不要编造出处。",
-	}}
+	messages := []chatMessage{{Role: "system", Content: systemPrompt}}
 	messages = append(messages, history...)
 	messages = append(messages, chatMessage{Role: "user", Content: "材料片段：\n" + contextText.String() + "问题：" + question})
 	return messages
@@ -122,66 +120,36 @@ func (a *App) askKnowledge(w http.ResponseWriter, r *http.Request, u *User) erro
 	if !a.gateway.configured() || !a.gateway.chatConfigured() {
 		return fail(503, "课程网关未配置，问答暂不可用")
 	}
-	var total, ready int
-	if err := a.db.QueryRowContext(r.Context(), `SELECT COUNT(*) FROM handouts WHERE class_id=?`, classID).Scan(&total); err != nil {
+	evidence, err := a.retrieveAnswerContext(r.Context(), classID, u, input.Query)
+	if err != nil {
 		return err
 	}
-	if err := a.db.QueryRowContext(r.Context(), `SELECT COUNT(*) FROM handouts h JOIN knowledge_documents d ON d.handout_id=h.id
-		JOIN knowledge_generations g ON g.id=d.active_generation_id JOIN knowledge_profiles p ON p.id=g.profile_id AND p.active=1
-		WHERE h.class_id=?`, classID).Scan(&ready); err != nil {
-		return err
-	}
-	if ready == 0 {
+	if evidence.NoReady {
 		writeJSON(w, 200, map[string]any{
 			"status": "no_ready_documents", "mode": modeHybrid, "answer": "尚无可检索的讲义", "citations": []any{},
-			"ready_documents": 0, "total_documents": total,
+			"ready_documents": 0, "total_documents": evidence.Total,
 		})
 		return nil
 	}
-	activeProfileID, _, threshold, err := a.activeProfile(r.Context())
-	if err != nil {
-		return fail(503, "检索模型配置不可用")
-	}
-	// 第一段：本班混合检索，最多取前 4 条。
-	hits, _, err := a.searchCandidates(r.Context(), modeHybrid, classID, activeProfileID, input.Query, nil, answerTopK, threshold)
-	if err != nil {
-		return fail(503, "检索暂不可用，请稍后重试")
-	}
-	ids := make([]string, 0, len(hits))
-	for _, hit := range hits {
-		ids = append(ids, hit.ID)
-	}
-	tx, err := a.db.BeginTx(r.Context(), nil)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-	if err = knowledgeAccessTx(r.Context(), tx, classID, u); err != nil {
-		return err
-	}
-	rows, err := a.publishedChunks(r.Context(), tx, classID, activeProfileID, ids, nil)
-	if err != nil {
-		return err
-	}
-	ordered := make([]chunkRow, 0, len(hits))
-	for _, hit := range hits {
-		if row, ok := rows[hit.ID]; ok {
-			ordered = append(ordered, row)
-		}
-	}
-	if err = tx.Commit(); err != nil {
-		return err
-	}
+	ordered := evidence.Rows
 	if len(ordered) == 0 {
 		// 没有依据：直接给出固定文案，绝不访问对话网关。
 		writeJSON(w, 200, map[string]any{
 			"status": "no_matches", "mode": modeHybrid, "answer": noAnswerText, "citations": []any{},
-			"ready_documents": ready, "total_documents": total, "partial": ready < total,
+			"ready_documents": evidence.Ready, "total_documents": evidence.Total, "partial": evidence.Ready < evidence.Total,
 		})
 		return nil
 	}
 	// 第二段：命中之后才把材料标题、切片序号与正文交给对话模块。
-	messages := buildAnswerMessages(input.Query, ordered, normalizeHistory(input.History))
+	promptBody, _, err := a.effectivePrompt(r.Context(), classID)
+	if err != nil {
+		return err
+	}
+	skills, err := a.effectiveSkills(r.Context(), classID)
+	if err != nil {
+		return err
+	}
+	messages := buildAnswerMessages(buildSystemPrompt(promptBody, skills), input.Query, ordered, normalizeHistory(input.History))
 	promptLength := 0
 	for _, message := range messages {
 		promptLength += len([]rune(message.Content))
@@ -201,17 +169,84 @@ func (a *App) askKnowledge(w http.ResponseWriter, r *http.Request, u *User) erro
 	if len(used) == 0 {
 		log.Printf("knowledge ask: 回答未引用任何命中切片（本次命中 %d 条）", len(ordered))
 	}
-	citations := make([]map[string]any, 0, len(ordered))
-	for i, row := range ordered {
+	writeJSON(w, 200, map[string]any{
+		"status": "ok", "mode": modeHybrid, "answer": cleaned, "citations": citationPayload(ordered),
+		"ready_documents": evidence.Ready, "total_documents": evidence.Total, "partial": evidence.Ready < evidence.Total,
+	})
+	return nil
+}
+
+// answerEvidence 是一次回答所需的检索结果与覆盖统计。
+type answerEvidence struct {
+	Rows    []chunkRow
+	Total   int
+	Ready   int
+	NoReady bool
+}
+
+// retrieveAnswerContext 执行「覆盖统计 → 本班混合检索（前 4 条）→ 回表复核权限与已发布代次」。
+// 单次问答与流式会话共用这一条路径，保证两者的检索与隔离语义一致。
+func (a *App) retrieveAnswerContext(ctx context.Context, classID string, u *User, query string) (answerEvidence, error) {
+	var out answerEvidence
+	if err := a.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM handouts WHERE class_id=?`, classID).Scan(&out.Total); err != nil {
+		return out, err
+	}
+	if err := a.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM handouts h JOIN knowledge_documents d ON d.handout_id=h.id
+		JOIN knowledge_generations g ON g.id=d.active_generation_id JOIN knowledge_profiles p ON p.id=g.profile_id AND p.active=1
+		WHERE h.class_id=?`, classID).Scan(&out.Ready); err != nil {
+		return out, err
+	}
+	if out.Ready == 0 {
+		out.NoReady = true
+		return out, nil
+	}
+	activeProfileID, _, threshold, err := a.activeProfile(ctx)
+	if err != nil {
+		return out, fail(503, "检索模型配置不可用")
+	}
+	hits, _, err := a.searchCandidates(ctx, modeHybrid, classID, activeProfileID, query, nil, answerTopK, threshold)
+	if err != nil {
+		log.Printf("knowledge answer retrieve: %v", err)
+		return out, fail(503, "检索暂不可用，请稍后重试")
+	}
+	ids := make([]string, 0, len(hits))
+	for _, hit := range hits {
+		ids = append(ids, hit.ID)
+	}
+	tx, err := a.db.BeginTx(ctx, nil)
+	if err != nil {
+		return out, err
+	}
+	defer tx.Rollback()
+	if err = knowledgeAccessTx(ctx, tx, classID, u); err != nil {
+		return out, err
+	}
+	rows, err := a.publishedChunks(ctx, tx, classID, activeProfileID, ids, nil)
+	if err != nil {
+		return out, err
+	}
+	ordered := make([]chunkRow, 0, len(hits))
+	for _, hit := range hits {
+		if row, ok := rows[hit.ID]; ok {
+			ordered = append(ordered, row)
+		}
+	}
+	if err = tx.Commit(); err != nil {
+		return out, err
+	}
+	out.Rows = ordered
+	return out, nil
+}
+
+// citationPayload 由服务端从命中切片生成出处：编号即展示顺序，位置与摘录都可核对。
+func citationPayload(rows []chunkRow) []map[string]any {
+	citations := make([]map[string]any, 0, len(rows))
+	for i, row := range rows {
 		citations = append(citations, map[string]any{
 			"index": i + 1, "chunk_id": row.ChunkID, "handout_id": row.HandoutID, "title": row.Title, "filename": row.Filename,
 			"ordinal": row.Ordinal, "char_start": row.CharStart, "char_end": row.CharEnd, "content": row.Content,
 			"locator": row.Locator, "download_url": "/api/handouts/" + row.HandoutID + "/file",
 		})
 	}
-	writeJSON(w, 200, map[string]any{
-		"status": "ok", "mode": modeHybrid, "answer": cleaned, "citations": citations,
-		"ready_documents": ready, "total_documents": total, "partial": ready < total,
-	})
-	return nil
+	return citations
 }

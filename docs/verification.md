@@ -107,6 +107,39 @@ OpenSpec 变更 `mysql-qdrant-platform` 的隔离、容器与网关验收任务�
 
 关键字模式的召回测量已单独完成（切片直接入库，绕过嵌入服务）：在 20 条标注问题上，关键字模式 **20/20** 在前 5 条命中来源切片；5 条无关查询共产生 **0** 条命中。据此关键字路径的绝对过滤下限取「至少命中一个二字 token」（`keywordMinScore = 0.0`），当前语料下没有出现低相关切片进入前 5 条的情况。
 
+## 解题助手（提示词、技能、会话与流式回答）验证（2026-10-13）
+
+`solver-assistant` 变更交付提示词与技能、会话与 SSE 流式回答，以及复用会话表的不透明 Bearer 令牌。以下为实际执行并通过的部分。
+
+后端（`npm run test:db`，便携 MySQL + 便携 Qdrant，实测 `ok 85.2s`）：
+
+- 迁移 003：`prompts`（含 VIRTUAL 生成列 `scope_key` 与唯一键）、`chat_sessions`、`chat_messages` 建立成功；重放 DDL 与再跑一次迁移器都不报错且旧数据不变（`TestPromptAndSessionTablesShape`、`TestMigrationIsIdempotent`）。
+- 内置内容：平台默认提示词与「解题引导」技能各写一条；管理员改过内容后重启不被覆盖；无班级行时提示词回退平台（`TestPlatformPromptsSeededIdempotently`）。
+- 层级与级联：平台级与班级级同名技能共存、同层级同名触发 1062、班级行覆盖平台行、班级行 `enabled=0` 表示停用、删除班级后班级级提示词与会话消息被清理（`TestPromptScopeUniquenessAndCascade`；需先删讲义再删班级，因为 `handouts.class_id` 外键没有级联）。
+- 令牌（`TestTokenIssuance`、`TestBearerTokenLifecycle`）：`POST /api/auth/token` 返回 `token`/`expires_at`/`user` 且**不写 Cookie**；数据库只存哈希、查不到原文；错误凭证与未知账号都返回 401 且消息一致；带令牌可读 `/auth/me`，伪造令牌 401，过期令牌 401；登出撤销后立即 401；学生被移出班级后令牌访问该班 403。
+- 同源边界（`TestSameOriginBoundaryForTokens`）：仅令牌的跨站写请求放行；仅 Cookie 的跨站写请求 403「不允许跨站请求」；同时带令牌与 Cookie 时按 Cookie 规则 403；同源令牌请求正常。
+- 流式客户端（`TestChatStreamEmitsDeltas`、`TestChatStreamRejectsTruncatedStream`、`TestChatStreamFailures`、`TestChatStreamStopsWhenEmitFails`、`TestChatStreamRequiresConfiguration`）：逐块回调并保留顺序；**流在没有 `[DONE]` 就结束会被判为截断并报错**（实现过程中发现并修掉的缺陷：原先会被当成完整回答）；非 200、网关忽略 `stream` 参数返回整段 JSON、只有结束标记、首字节超时四种情形都明确报错，不做“假流式”；回调失败立即停止读取上游。
+- 会话与 SSE（`TestChatSessionFlowAndEvents`、`TestChatSessionList`、`TestChatNoMatchesSkipsChatGateway`、`TestChatInterruptionIsRecorded`、`TestChatCitationsAndOutOfRangeMarkers`、`TestChatIsolation`）：事件顺序为若干 `delta` → `citations` → `done`，响应头含 `text/event-stream`、`X-Accel-Buffering: no`、`Cache-Control: no-store`；用户消息与助手消息顺序号连续并落库，首条用户消息生成会话标题；**无命中时计数替身记录的对话调用次数为 0**，只返回固定文案与空出处；客户端取消后助手消息记为 `interrupted` 且不存在 `complete`；越界编号 `[7]` 被去掉方括号、范围内的 `[1]` 保留，出处可由来源接口逐字核对；非成员 403、跨班 404、归档只读、移除成员立即失效。
+
+前端（本地栈：便携 MySQL + 便携 Qdrant + API + worker + Vite，嵌入与对话指向仓库自带替身；`.local/assistant-ui-check.mjs`，**11/11 通过**）：
+
+- 讲义上传后索引就绪（`status=ready`）。
+- **流式增量分多次渲染**：轮询助手气泡文本观察到 13 个不同长度，说明是逐块到达而不是一次性渲染。
+- 回答含 `[1]`，出处卡片可打开「来源详情」且正文与材料一致。
+- 无依据提问：显示「资料中未找到相关内容」，该气泡出处数量为 0。
+- 「停止生成」：中断消息以 `.bubble.interrupted` 呈现，服务端日志同时记录「回答中断: 读取流式响应失败: context canceled」。
+- 提示词与技能：保存班级提示词后状态变为「使用班级提示词」；内置「解题引导」可停用再启用；新增班级技能后「移除覆盖」可恢复平台状态。
+- 390×844 视口横向溢出 0px；1440px 与 390px 均无页面脚本错误；截图见 `.local/screenshots/assistant-*.png`。
+- 既有浏览器回归（`scripts/browser-test.mjs`）与 73 项 HTTP 集成在同一套新代码上继续通过。
+
+本轮顺带修掉的开发体验问题：
+
+- `npm run dev:local` 原先只起 API、没有任何 worker，上传的讲义永远不会被索引（知识库页只能显示“尚无可检索的讲义”）；现已同时启动 worker。
+- 仓库自带的开发替身补齐 `/v1/embeddings`、`/v1/chat/completions` 与 **SSE 流式返回**（分片间隔可用 `STUB_CHUNK_DELAY_MS` 调整），因此没有 Docker 与大模型也能验证流式前端。
+- Vite 增加 `watch.ignored`：编辑器保存时写入的临时目录会让 dev server 以 `EBUSY` 崩溃，进而拖垮整个本地栈。
+
+尚未完成，不计入通过：无。经 web 容器（nginx）的容器级验证已在 2026-10-14 完成，见本文件「容器级验收」一节。
+
 ## 真实模型下的端到端验收（2026-10-01）
 
 课程网关凭证未提供，因此用**兼容 OpenAI 的两个真实模型服务**完成等价验收：嵌入走本机 Ollama 的 `qwen3-embedding:0.6b`（1024 维，与集合一致），对话走 DeepSeek 的 `deepseek-flash`。两者都是真实模型推理，不是替身；服务端注入密钥、浏览器不接触密钥的边界不变。**课程网关到位后需用同一条命令复跑，以记录课程指定的模型版本。**
@@ -193,3 +226,156 @@ $env:KNOWLEDGE_MODE_BASELINE = "1"; npm run test:knowledge   # 附带三模式�
 - 随后配置网关（替身）重启：同一份种子材料被重新排队并索引完成（`jobs=1`、`docs=1`、`chunks=1`，代次记录 `window/800/80`、状态 `ready`），说明「先部署、后配置网关」的补建索引路径可用。
 - 检索与问答：关键字检索命中该切片（含 1 起始序号与字符区间），问答返回回答与 1 条出处。
 - 复核后清理：经接口删除讲义（同时清理向量），删除示例班级，数据库回到基线（users=3、classes=1、handouts=0、chunks=0、jobs=0），向量库残留点为 0。
+
+## 接口契约与文档页面验证（2026-10-13）
+
+`openapi-swagger` 变更交付 OpenAPI 3.1 契约、自托管文档页面与路由一致性检查。
+
+契约与提供方式：
+
+- `docs/openapi.json`：45 KB，OpenAPI 3.1，涵盖 30 条路径 / 39 个操作；每个操作都有 `summary`、参数或请求体、成功响应与错误码，并按是否登录标注 `security`（`cookieAuth` 与 `bearerAuth`）。
+- `GET /api/openapi.json` 返回的内容与仓库文件**字节一致**（`TestApiDocumentationEndpoints` 断言）；`GET /api/docs` 返回 1.4 KB 的文档页面，页面与资源（`swagger-ui.css` 182 KB、`swagger-ui-bundle.js` 1550 KB 等 7 个文件，Apache-2.0）全部由服务自托管。
+- 路由注册已整理为可枚举的 `routeSpec` 表（`backend/routes.go`），注册与文档检查共用同一份数据；重构后 73 项 HTTP 集成与全部 Go 测试通过，说明对外行为未变。
+
+一致性检查（`go test`，无需网络）：
+
+| 测试 | 覆盖 |
+| --- | --- |
+| `TestOpenAPIMatchesRoutes` | 实现与契约的操作集合双向一致（缺失与多余都报错） |
+| `TestOpenAPISecurityMatchesRoutes` | 受保护操作必须有 `security`、匿名操作必须没有，且每个操作有 `summary` |
+| `TestOpenAPIPathParametersExist` | 契约声明的路径参数与实现中的 `{name}` 双向一致且 `required` |
+| `TestOpenAPICopyIsCurrent` | `backend/openapi.json` 与 `docs/openapi.json` 字节一致（副本不过期） |
+| `TestApiDocumentationEndpoints` | 契约与页面可读、页面不引用外部地址、资源存在、目录穿越与未知资源返回 404 |
+
+反向验证（实施过程中真实发生，非构造）：`TestOpenAPIPathParametersExist` 抓出 `PUT /api/admin/skills/{name}` 漏声明路径参数 `name`；补上后通过。这正是该检查存在的意义。
+
+文档页面（真实 Chrome，`node .local/api-docs-check.mjs`，**6/6 通过**）：
+
+- 用账号密码换取令牌成功（`POST /api/auth/token`）。
+- 页面渲染出 43 个操作块（含分组与说明）。
+- 监听全部请求：**没有任何外部域名请求**，只访问本站 `/api`。
+- 未填令牌时对 `GET /api/auth/me` 点 Execute：**网络响应 401**，页面显示「请先登录」。
+- 在 Authorize 填入 Bearer 令牌后再次 Execute：**网络响应 200**，响应体含真实用户信息（`admin`）。
+- 无页面脚本错误；截图 `.local/screenshots/api-docs-unauthorized.png` 与 `api-docs-authorized.png`。
+
+契约错误码对照（逐条执行）：超长查询 400、未知 `mode` 400、未登录 401、空提问 400、带 Cookie 的跨站写请求 403 —— 与契约描述一致。
+
+实现方式的两点偏差（已在 `tasks.md` 中记录）：
+
+1. `go:embed` 不能读取包目录之外的路径，因此契约与 Swagger 资源由 `scripts/sync-openapi.mjs` 同步到 `backend/`（`openapi.json`、`swaggerui/`）；`TestOpenAPICopyIsCurrent` 与服务端 `--check` 双重拦截副本过期。
+2. 因此文档页面与资源改由 API 在 `/api/docs` 提供，不再改动前端构建与 nginx：dev 与 Compose 两种形态走同一条路径，也不会受 SSE 缓冲配置影响。
+
+尚未完成，不计入通过：无。经 web 容器访问 `/api/docs`、`/api/openapi.json` 与静态资源均已在 2026-10-14 实测通过，见本文件「容器级验收」一节。
+
+## 接口测试套件验证（2026-10-14）
+
+`api-test-suite` 变更交付 `apitest/`：一个接口一个脚本，目录层级就是 URL，一键运行并生成 HTML 报告。
+
+运行（本地栈：便携 MySQL 55432 + 便携 Qdrant + API 8081 + 仓库自带网关替身）：
+
+```
+npm run test:api          # 等价于 apitest/.venv/Scripts/python apitest/run_all.py
+```
+
+首次完整运行结果：**8/8 用例通过，耗时 6.1 秒**，报告写入 `apitest/report/index.html`（自包含、无外链、不提交）。
+报告头部记录目标服务、管理员口令来源、数据库核对方式（`direct` 或 `compose-exec`）、用例数与总耗时。
+
+| 用例 | 核对内容（不只状态码） |
+| --- | --- |
+| `GET /api/health` | 200 且 `status=ok` |
+| `POST /api/auth/login` | 200、角色 `admin`、**下发 Cookie**、`sessions` 新增行、库里查不到 Cookie 原文、库中角色与响应一致 |
+| `POST /api/auth/token` | 200、返回 `token`/`expires_at`/`user`、**响应无 `Set-Cookie`**、库里只存哈希、错误口令与未知账号都是 401 且提示一致、令牌可读 `/auth/me` |
+| `POST /api/classes/{id}/knowledge/search` | 混合检索 `ok` 且命中属于本班讲义、切片在 `knowledge_chunks` 中存在且属于该班、来源接口返回同一切片；关键字与向量各一次；无关问题 `no_matches` + 固定文案 + 空命中；未知模式 400 |
+| `GET`／`PUT /api/classes/{id}/prompts` | 平台默认已初始化、班级覆盖回显并核对 `prompts` 行、超长 400 且原内容不变、新增/停用/移除班级技能并核对 `scope/enabled`、**学生写入 403** |
+| `POST /api/classes/{id}/sessions` | 201、`chat_sessions` 行落库且班级一致、列表包含新会话、超长标题 400 |
+| `POST .../{sid}/messages` | ≥2 个增量事件、结束前有出处、`done=complete`、出处 1–4 且编号从 1 开始、回答含 `[1]`；`chat_messages` 两行序号 1/2、助手状态 `complete`、落库内容与流式增量逐字一致、出处已落库；无依据时固定文案 + 空出处 + `no_matches`；空白消息 400 |
+
+无依据提问**不调用对话模型**这项由外部观测确认：报告中的断言「无依据时不调用对话模型 — 期望 0，实际 0」
+取自仓库自带网关替身的 `/stats` 计数（`APITEST_GATEWAY_STATS_URL` 可覆盖；真实网关环境下该断言改为注明由
+后端测试 `TestChatNoMatchesSkipsChatGateway` 覆盖，不会伪装成通过）。
+
+公共库自检：`apitest/.venv/Scripts/python apitest/selfcheck.py` → **16/16 通过**，覆盖 `Api` 的 200/401/403、
+SSE 逐事件解析（含心跳与 UTF-8 解码）、`Database` 的查询与 `query_one`/`query_all`、
+compose-exec 模式的 SQL 字面量转义与命令拼装、`report` 的单文件/转义/差异渲染。
+
+清理与幂等（连续两次运行）：
+
+| 表 | 基线 | 第 1 次后 | 第 2 次后 |
+| --- | --- | --- | --- |
+| users | 15 | 15 | 15 |
+| classrooms | 16 | 16 | 16 |
+| handouts | 9 | 9 | 9 |
+| knowledge_documents | 9 | 9 | 9 |
+| knowledge_chunks | 7 | 7 | 7 |
+| chat_sessions | 8 | 8 | 8 |
+| chat_messages | 36 | 36 | 36 |
+| prompts | 7 | 7 | 7 |
+| sessions | 60 | 64 | 68 |
+
+两次运行都是 8/8；业务表零残留。`sessions` 每次 +4 属预期：用例本身要验证登录与令牌签发，这些会话行不是临时数据。
+
+其余行为验证：
+
+- **发现机制**：临时新增 `cases/api/tmp-verify-check/GET.py` 后无需改运行器即被执行，随后删除（用例数 1）。
+- **失败处理**：把断言改为必失败后，退出码 1，报告出现「失败」标记与「期望 1，实际 2」差异；
+  该用例的 `setup` 仍然创建了临时班级，运行后基线不变 —— teardown 在失败时照常执行。
+- **前置缺失**：只运行会话消息用例时报告 `[FAIL] 前置未满足：session_id`，不是静默跳过，退出码 1。
+- **依赖缺失**：用未安装依赖的系统解释器运行，输出安装命令提示并以退出码 2 结束（不再抛 `ImportError`）。
+- **忽略提交**：`git check-ignore -v` 确认 `apitest/report/index.html` 与 `apitest/.venv` 都命中 `.gitignore`。
+
+实施过程中发现并修掉的问题（都有回归保护）：
+
+1. **产品缺陷**：班级自建技能无法只改启用状态。服务端原先只在「平台存在同名技能」时才允许省略正文，
+   于是 `PUT /api/classes/{id}/skills/逐步提示` 只发 `{"enabled":false}` 会被 400 拒绝（前端的自建技能
+   启用/停用按钮也会踩到）。改为：省略正文时先沿用本班已有正文，再回退平台同名技能；平台技能同理。
+   回归测试 `TestSkillToggleKeepsClassBodyWithoutResending`（修复前该用例失败）。
+2. **索引可见性竞态**：`knowledge_documents.status` 变为 `ready` 与实际可检索之间存在极短时间差，
+   刚上传就检索会偶发 `no_matches`。测试侧增加关键字探针 `wait_searchable`，确认「查得到」再开始断言。
+3. **SSE 中文乱码**：客户端 `iter_lines(decode_unicode=True)` 在响应头缺少 `charset` 时按 latin-1 解码，
+   中文变乱码；改为显式 `response.encoding = "utf-8"`。自检脚本用本地假事件流覆盖这一点。
+4. **依赖自检形同虚设**：`run_all.py` 在自检之前就 `import requests`，缺依赖时直接抛 `ImportError`；
+   改为自检通过后再导入公共库。
+5. **限流误报**：管理员口令探测遇到产品级登录限流（429）时会笼统提示「缺少口令」；
+   现在区分 429 并给出「等待窗口或重启本地 API」的明确建议。
+6. **清理用错身份**：teardown 用共享会话（管理员 Cookie）删讲义会被 403 拒绝；改为使用所属教师令牌。
+7. **断言口径错误**：一开始要求「改写后的问法」在向量模式下也命中。仓库替身是字符二元组特征哈希、
+   不是语义模型，改写问法达不到余弦阈值属正常；向量断言改用讲义原句（实测相似度 0.7075），并在用例注释中写明。
+
+尚未完成，不计入通过：无。`direct` 与 `compose-exec` 两种模式都已实测通过（见下）。
+
+## 容器级验收（2026-10-14）
+
+Docker Desktop 启动后（引擎 29.8.0），用 `docker compose -f compose.yaml -f .local/compose-verification.yaml up -d --build api worker web`
+重建并启动了新代码；api/worker 通过 `host.docker.internal` 接入宿主机上的开发替身（嵌入模型名沿用库里存量档案的
+`qwen3-embedding:0.6b`——api 启动时会校验「当前配置与档案存储版本一致」，换名字会被正确拒绝，这是防串模型的保护）。
+
+`node .local/container-verify.mjs`（经 nginx 的 web 容器，**11/11 通过**）：
+
+| 检查 | 结果 |
+| --- | --- |
+| 经 web 容器打开 `/api/docs` | 200，返回文档页面 HTML |
+| 经 web 容器读取 `/api/openapi.json` | 200，30 条路径 |
+| 文档页面静态资源自托管 | `/api/docs/swagger-ui-bundle.js` 200 |
+| 经 nginx 换取令牌、上传讲义 | 200 / 201 |
+| 容器内 worker 完成索引 | `status=ready` |
+| 流式响应头经 nginx 保持 | `text/event-stream; charset=utf-8`、`Cache-Control: no-store` |
+| **经 nginx 收到多个增量事件** | **12 个 delta，分块读取 13 次** |
+| **增量分批到达而不是一次性下发** | **首末分块间隔 3640 ms，最大间隔 325 ms** |
+| 事件序列完整 | 以 `done: complete` 结束 |
+| `api` 容器未发布宿主端口 | 只有 `8081/tcp`（只 expose） |
+
+分批到达这一项是「nginx 没有缓冲 SSE」的直接证据：若被缓冲，所有增量会在结束时一次性到达。
+`X-Accel-Buffering: no` 由 API 设置，但它是 nginx 自己消费的响应头，不会转发给客户端，因此不以此断言。
+
+### 接口测试套件在 Compose 部署上运行（compose-exec 模式）
+
+```
+APITEST_BASE_URL=http://localhost:8080 npm run test:api
+```
+
+结果：**8/8 用例通过，15.6 秒**，报告头部记录「数据库核对：compose-exec（docker compose exec:-）」；
+同一套用例在 `dev:local` 上以 `direct` 模式运行为 **8/8，6.6 秒**——两种核对方式结果一致。
+
+这一轮验证发现并修掉一个真实缺陷：容器内 `mysql` 的批处理输出（`-N -B`）全部是文本、且把换行等字符转义输出，
+于是 `COUNT(*)` 变成字符串 `'0'`、正文里的换行变成字面 `\n`，断言随之失败（首次运行 3/8）。
+现在 compose-exec 解析会还原转义并把纯数字转回数值，两种模式的结果因此完全一致。

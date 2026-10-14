@@ -1,0 +1,5 @@
+{
+  "order": 50,
+  "path_params": { "id": "$class_id" },
+  "requires": ["class_id"]
+}

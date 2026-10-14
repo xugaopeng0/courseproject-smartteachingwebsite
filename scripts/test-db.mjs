@@ -38,7 +38,9 @@ try {
   console.log(`Qdrant 就绪：${qdrant.url}`);
 
   const goBinary = process.platform === "win32" ? resolve(root, ".tools/go/bin/go.exe") : "go";
-  const child = spawn(goBinary, ["test", "./..."], {
+  // 允许透传 go test 参数，例如：node scripts/test-db.mjs -run TestToken -v -count=1
+  const extraArgs = process.argv.slice(2);
+  const child = spawn(goBinary, ["test", ...extraArgs, "./..."], {
     cwd: resolve(root, "backend"),
     stdio: "inherit",
     windowsHide: true,

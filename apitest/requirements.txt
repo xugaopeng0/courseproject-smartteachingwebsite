@@ -1,0 +1,3 @@
+# 接口测试套件的依赖（安装到 apitest/.venv，见 apitest/README.md）
+requests==2.34.2
+PyMySQL==2.2.8

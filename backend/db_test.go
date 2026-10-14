@@ -44,7 +44,8 @@ func testApp(t *testing.T) (*App, context.Context) {
 	if _, err = db.ExecContext(ctx, `SET FOREIGN_KEY_CHECKS=0`); err != nil {
 		t.Fatal(err)
 	}
-	for _, table := range []string{"knowledge_jobs", "knowledge_chunks", "knowledge_generations", "knowledge_documents", "knowledge_profiles",
+	for _, table := range []string{"chat_messages", "chat_sessions", "prompts",
+		"knowledge_jobs", "knowledge_chunks", "knowledge_generations", "knowledge_documents", "knowledge_profiles",
 		"schema_migrations", "handouts", "memberships", "classrooms", "sessions", "users"} {
 		if _, err = db.ExecContext(ctx, "DROP TABLE IF EXISTS "+table); err != nil {
 			t.Fatal(err)
@@ -65,6 +66,10 @@ func testApp(t *testing.T) (*App, context.Context) {
 		t.Fatalf("迁移失败: %v", err)
 	}
 	a := &App{db: db, uploads: t.TempDir(), origin: "http://localhost:8080", knowledge: true, attempts: map[string]attempt{}}
+	// 与启动路径一致：测试环境同样写入平台默认提示词与内置技能。
+	if err = a.ensurePlatformPrompts(ctx); err != nil {
+		t.Fatalf("写入平台提示词失败: %v", err)
+	}
 	a.gateway = newGatewayClient(4)
 	a.profileID = "test-profile"
 	a.vectors = newVectorStore(4)

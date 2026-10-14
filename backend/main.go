@@ -171,23 +171,32 @@ func hostname(host string) string {
 	return host
 }
 
-func (a *App) route(mux *http.ServeMux, pattern string, auth bool, fn endpoint) {
-	mux.HandleFunc(pattern, func(w http.ResponseWriter, r *http.Request) {
+// routeSpec 描述一个对外操作。路由注册与 `docs/openapi.json` 的一致性检查共用这一份数据，
+// 因此新增接口时不会出现「实现了但文档没有」或反之的漂移。
+type routeSpec struct {
+	Method  string
+	Pattern string
+	Auth    bool
+	Handler endpoint
+}
+
+func (a *App) mount(mux *http.ServeMux, spec routeSpec) {
+	mux.HandleFunc(spec.Method+" "+spec.Pattern, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Cache-Control", "no-store")
 		if r.Method != "GET" && r.Method != "HEAD" {
-			if !a.sameOrigin(r) {
+			if !bearerOnly(r) && !a.sameOrigin(r) {
 				writeJSON(w, 403, map[string]string{"error": "不允许跨站请求"})
 				return
 			}
 		}
 		var u *User
 		var err error
-		if auth {
+		if spec.Auth {
 			u, err = a.currentUser(r)
 		}
 		if err == nil {
-			err = fn(w, r, u)
+			err = spec.Handler(w, r, u)
 		}
 		if err != nil {
 			var e *apiError
@@ -200,25 +209,50 @@ func (a *App) route(mux *http.ServeMux, pattern string, auth bool, fn endpoint) 
 		}
 	})
 }
+// requestToken 取出请求携带的凭证：优先 Authorization: Bearer，其次浏览器 Cookie。
+func requestToken(r *http.Request) (string, string) {
+	if header := r.Header.Get("Authorization"); len(header) > 7 && strings.EqualFold(header[:7], "bearer ") {
+		return strings.TrimSpace(header[7:]), "bearer"
+	}
+	if c, err := r.Cookie("teaching_session"); err == nil {
+		return c.Value, "cookie"
+	}
+	return "", ""
+}
+
+// bearerOnly 判断请求是否「只带 Bearer 令牌」。令牌不会被浏览器自动携带，
+// 因此这类请求不做同源校验；同时带 Cookie 的请求仍按 Cookie 规则校验，防 CSRF。
+func bearerOnly(r *http.Request) bool {
+	value, kind := requestToken(r)
+	if kind != "bearer" || value == "" {
+		return false
+	}
+	_, err := r.Cookie("teaching_session")
+	return err != nil
+}
+
 func (a *App) currentUser(r *http.Request) (*User, error) {
-	c, err := r.Cookie("teaching_session")
-	if err != nil {
+	value, kind := requestToken(r)
+	if value == "" {
 		return nil, fail(401, "请先登录")
 	}
 	u := &User{}
-	err = a.db.QueryRowContext(r.Context(), `SELECT u.id,u.username,u.name,u.role FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=? AND s.expires_at>NOW(6)`, tokenHash(c.Value)).Scan(&u.ID, &u.Username, &u.Name, &u.Role)
+	err := a.db.QueryRowContext(r.Context(), `SELECT u.id,u.username,u.name,u.role FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=? AND s.expires_at>NOW(6)`, tokenHash(value)).Scan(&u.ID, &u.Username, &u.Name, &u.Role)
 	if errors.Is(err, sql.ErrNoRows) {
+		if kind == "bearer" {
+			return nil, fail(401, "令牌无效或已过期")
+		}
 		return nil, fail(401, "登录已过期，请重新登录")
 	}
 	return u, err
 }
 func (a *App) session(w http.ResponseWriter, r *http.Request, u User) error {
 	token := randomID(32)
-	_, err := a.db.ExecContext(r.Context(), `INSERT INTO sessions(token_hash,user_id,expires_at) VALUES(?,?,?)`, tokenHash(token), u.ID, time.Now().UTC().Add(8*time.Hour))
+	_, err := a.db.ExecContext(r.Context(), `INSERT INTO sessions(token_hash,user_id,expires_at) VALUES(?,?,?)`, tokenHash(token), u.ID, time.Now().UTC().Add(sessionLifetime))
 	if err != nil {
 		return err
 	}
-	http.SetCookie(w, &http.Cookie{Name: "teaching_session", Value: token, Path: "/", HttpOnly: true, Secure: a.secure, SameSite: http.SameSiteLaxMode, MaxAge: 28800})
+	http.SetCookie(w, &http.Cookie{Name: "teaching_session", Value: token, Path: "/", HttpOnly: true, Secure: a.secure, SameSite: http.SameSiteLaxMode, MaxAge: int(sessionLifetime.Seconds())})
 	writeJSON(w, 200, u)
 	return nil
 }
@@ -242,45 +276,9 @@ func (a *App) limited(r *http.Request) bool {
 }
 func (a *App) handler() http.Handler {
 	mux := http.NewServeMux()
-	a.route(mux, "GET /api/health", false, func(w http.ResponseWriter, r *http.Request, _ *User) error {
-		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
-		defer cancel()
-		if err := a.db.PingContext(ctx); err != nil {
-			return fail(503, "数据库未就绪")
-		}
-		writeJSON(w, 200, map[string]string{"status": "ok"})
-		return nil
-	})
-	a.route(mux, "POST /api/auth/register", false, a.register)
-	a.route(mux, "POST /api/auth/login", false, a.login)
-	a.route(mux, "POST /api/auth/logout", false, func(w http.ResponseWriter, r *http.Request, _ *User) error {
-		if c, err := r.Cookie("teaching_session"); err == nil {
-			if _, err = a.db.ExecContext(r.Context(), `DELETE FROM sessions WHERE token_hash=?`, tokenHash(c.Value)); err != nil {
-				return err
-			}
-		}
-		http.SetCookie(w, &http.Cookie{Name: "teaching_session", Value: "", Path: "/", HttpOnly: true, Secure: a.secure, SameSite: http.SameSiteLaxMode, MaxAge: -1})
-		writeJSON(w, 200, map[string]bool{"ok": true})
-		return nil
-	})
-	a.route(mux, "GET /api/auth/me", true, func(w http.ResponseWriter, r *http.Request, u *User) error { writeJSON(w, 200, u); return nil })
-	a.route(mux, "GET /api/admin/teachers", true, a.teachers)
-	a.route(mux, "POST /api/admin/teachers", true, a.createTeacher)
-	a.route(mux, "GET /api/classes", true, a.classes)
-	a.route(mux, "POST /api/classes", true, a.createClass)
-	a.route(mux, "POST /api/classes/join", true, a.joinClass)
-	a.route(mux, "GET /api/classes/{id}", true, a.classDetail)
-	a.route(mux, "PATCH /api/classes/{id}", true, a.updateClass)
-	a.route(mux, "POST /api/classes/{id}/archive", true, a.archiveClass)
-	a.route(mux, "DELETE /api/classes/{id}/members/{userID}", true, a.removeMember)
-	a.route(mux, "POST /api/classes/{id}/handouts", true, a.upload)
-	a.route(mux, "GET /api/handouts/{id}/file", true, a.download)
-	a.route(mux, "DELETE /api/handouts/{id}", true, a.deleteHandout)
-	a.route(mux, "GET /api/classes/{id}/knowledge/documents", true, a.knowledgeDocuments)
-	a.route(mux, "POST /api/classes/{id}/knowledge/documents/{handoutID}/index", true, a.indexKnowledgeDocument)
-	a.route(mux, "POST /api/classes/{id}/knowledge/search", true, a.searchKnowledge)
-	a.route(mux, "POST /api/classes/{id}/knowledge/ask", true, a.askKnowledge)
-	a.route(mux, "GET /api/classes/{id}/knowledge/chunks/{chunkID}/source", true, a.knowledgeSource)
+	for _, spec := range a.routes() {
+		a.mount(mux, spec)
+	}
 	return mux
 }
 
@@ -480,6 +478,10 @@ func main() {
 		a.seedEnabled = env("SEED_ENABLED", "false") == "true"
 		a.seedDir = env("SEED_DIR", "./seeds")
 		a.seedClassName = env("SEED_CLASS_NAME", "示例班级")
+		// 提示词与内置技能不依赖网关，只要知识库启用就保证存在（幂等，不覆盖已有内容）。
+		if err = a.ensurePlatformPrompts(ctx); err != nil {
+			log.Fatal(err)
+		}
 	}
 	if err = a.bootstrap(ctx); err != nil {
 		log.Fatal(err)

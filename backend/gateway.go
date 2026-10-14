@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -27,6 +28,7 @@ type gatewayClient struct {
 	dimensions int
 	timeout    time.Duration
 	http       *http.Client
+	streamHTTP *http.Client
 }
 
 // chatMessage 是对话模块的消息；服务端只接受 user 与 assistant 两种角色。
@@ -174,4 +176,114 @@ func (g *gatewayClient) chat(ctx context.Context, messages []chatMessage) (strin
 		return "", errors.New("课程网关返回了空回答")
 	}
 	return answer, nil
+}
+
+// streamClient 是流式专用客户端：只限制「首字节（响应头）超时」，整体时长交给请求上下文，
+// 因此长回答不会被客户端的整体超时截断。
+func (g *gatewayClient) streamClient() *http.Client {
+	if g.streamHTTP == nil {
+		g.streamHTTP = &http.Client{Transport: &http.Transport{
+			Proxy:                 http.ProxyFromEnvironment,
+			ResponseHeaderTimeout: g.timeout,
+			IdleConnTimeout:       90 * time.Second,
+		}}
+	}
+	return g.streamHTTP
+}
+
+// chatStream 以流式方式调用对话接口，把每个增量文本交给 emit。
+// 客户端断开时通过 ctx 取消上游请求；网关不支持流式时明确报错，绝不静默降级成整段返回。
+func (g *gatewayClient) chatStream(ctx context.Context, messages []chatMessage, emit func(string) error) error {
+	if !g.chatConfigured() {
+		return errors.New("课程网关未配置对话模型")
+	}
+	base, key := g.chatEndpoint()
+	raw, err := json.Marshal(map[string]any{"model": g.chatModel, "messages": messages, "stream": true})
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, base+"/chat/completions", bytes.NewReader(raw))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "text/event-stream")
+	if key != "" {
+		req.Header.Set("Authorization", "Bearer "+key)
+	}
+	resp, err := g.streamClient().Do(req)
+	if err != nil {
+		return fmt.Errorf("课程网关不可用: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		detail, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		return fmt.Errorf("课程网关返回状态 %d: %s", resp.StatusCode, strings.TrimSpace(string(detail)))
+	}
+	scanner := bufio.NewScanner(resp.Body)
+	scanner.Buffer(make([]byte, 0, 64*1024), 1<<20)
+	emitted := false
+	finished := false
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, ":") {
+			continue
+		}
+		// 网关忽略 stream 参数时会直接返回整段 JSON：明确报错而不是当作流式。
+		if strings.HasPrefix(line, "{") {
+			return errors.New("课程网关未按流式返回（收到整段响应）")
+		}
+		if !strings.HasPrefix(line, "data:") {
+			continue
+		}
+		payload := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+		if payload == "[DONE]" {
+			finished = true
+			break
+		}
+		var chunk struct {
+			Choices []struct {
+				Delta struct {
+					Content string `json:"content"`
+				} `json:"delta"`
+				Message struct {
+					Content string `json:"content"`
+				} `json:"message"`
+			} `json:"choices"`
+			Error *struct {
+				Message string `json:"message"`
+			} `json:"error"`
+		}
+		if err = json.Unmarshal([]byte(payload), &chunk); err != nil {
+			return fmt.Errorf("课程网关流式分片无法解析: %w", err)
+		}
+		if chunk.Error != nil {
+			return fmt.Errorf("课程网关返回错误: %s", chunk.Error.Message)
+		}
+		if len(chunk.Choices) == 0 {
+			continue
+		}
+		text := chunk.Choices[0].Delta.Content
+		if text == "" {
+			text = chunk.Choices[0].Message.Content
+		}
+		if text == "" {
+			continue
+		}
+		if err = emit(text); err != nil {
+			return err
+		}
+		emitted = true
+	}
+	if err = scanner.Err(); err != nil {
+		return fmt.Errorf("读取流式响应失败: %w", err)
+	}
+	if !emitted {
+		return errors.New("课程网关未返回任何内容")
+	}
+	// 没有收到 [DONE] 就结束，说明流被截断：按中断处理，绝不当作完整回答。
+	if !finished {
+		return errors.New("课程网关流式响应未正常结束")
+	}
+	return nil
 }

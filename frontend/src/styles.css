@@ -1257,6 +1257,73 @@ label textarea {
 .knowledge-citations p { margin: 0 0 8px; color: #62636d; font-size: 11px; white-space: pre-wrap; word-break: break-word; }
 .citation-actions { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
 .citation-actions a { text-decoration: none; }
+
+/* 解题助手：左侧会话列表 + 右侧消息流 */
+.assistant { display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 18px; align-items: start; }
+.assistant-side { border: 1px solid var(--line); border-radius: 10px; padding: 14px; background: #fff; }
+.assistant-side-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.assistant-side-head h3 { margin: 0; font-size: 13px; }
+.session-list { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 6px; }
+.session-list button {
+  width: 100%; text-align: left; border: 1px solid transparent; background: #fafafb;
+  border-radius: 8px; padding: 9px 10px; cursor: pointer; display: grid; gap: 3px;
+}
+.session-list button.active { border-color: #f0dfe1; background: var(--soft); }
+.session-list strong { font-size: 12px; font-weight: 600; color: #3c3d45; overflow-wrap: anywhere; }
+.session-list small { color: var(--muted); font-size: 10px; }
+.assistant-main { border: 1px solid var(--line); border-radius: 10px; background: #fff; padding: 16px; display: grid; gap: 12px; }
+.assistant-head { display: grid; gap: 3px; border-bottom: 1px solid var(--line); padding-bottom: 10px; }
+.assistant-head strong { font-size: 13px; }
+.assistant-head small { color: var(--muted); font-size: 11px; }
+.assistant-messages { display: grid; gap: 14px; max-height: 460px; overflow-y: auto; padding-right: 4px; }
+.bubble { border-radius: 10px; padding: 11px 13px; display: grid; gap: 7px; }
+.bubble.user { background: #f6f7f9; justify-self: end; max-width: 88%; }
+.bubble.assistant { background: #fff; border: 1px solid var(--line); }
+.bubble.interrupted { border-color: #f0d7c2; background: #fffaf4; }
+.bubble-meta { display: flex; align-items: baseline; gap: 8px; color: var(--muted); font-size: 10px; }
+.bubble-meta em { color: #b4713a; font-style: normal; }
+.bubble > p { margin: 0; font-size: 12px; line-height: 1.75; white-space: pre-wrap; word-break: break-word; }
+.bubble > p.streaming::after {
+  content: ""; display: inline-block; width: 6px; height: 13px; margin-left: 3px;
+  background: var(--red); vertical-align: -2px; animation: blink 1s steps(2, start) infinite;
+}
+@keyframes blink { to { visibility: hidden; } }
+.assistant-notice { margin: 0; color: #8a6d3b; background: #fdf7e6; border-radius: 8px; padding: 8px 11px; font-size: 11px; }
+.assistant-composer { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: end; border-top: 1px solid var(--line); padding-top: 12px; }
+.assistant-composer textarea {
+  border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; font: inherit; font-size: 12px;
+  resize: vertical; min-height: 44px; width: 100%;
+}
+.assistant-composer textarea:focus { outline: 2px solid #f2dade; border-color: var(--red); }
+.assistant-placeholder { display: grid; gap: 10px; justify-items: center; text-align: center; padding: 42px 20px; color: var(--muted); }
+.assistant-placeholder strong { color: #3c3d45; font-size: 14px; }
+.assistant-placeholder p { margin: 0; font-size: 12px; max-width: 420px; line-height: 1.7; }
+.assistant-source { margin-top: 4px; }
+
+/* 提示词与技能 */
+.prompt-editor { border: 1px solid var(--line); border-radius: 10px; padding: 16px; background: #fff; display: grid; gap: 12px; margin-bottom: 14px; }
+.prompt-field { display: grid; gap: 6px; font-size: 12px; }
+.prompt-field textarea, .skill-new textarea, .skill-new input {
+  border: 1px solid var(--line); border-radius: 8px; padding: 9px 11px; font: inherit; font-size: 12px; resize: vertical; width: 100%;
+}
+.prompt-field textarea:focus, .skill-new textarea:focus, .skill-new input:focus { outline: 2px solid #f2dade; border-color: var(--red); }
+.prompt-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+.skill-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.skill-list li { border: 1px solid var(--line); border-radius: 9px; padding: 11px 13px; display: flex; gap: 12px; justify-content: space-between; align-items: flex-start; }
+.skill-list strong { font-size: 12px; }
+.skill-list small { display: block; color: var(--muted); font-size: 10px; margin: 2px 0 5px; }
+.skill-list p { margin: 0; font-size: 11px; color: #62636d; line-height: 1.7; }
+.skill-actions { display: flex; gap: 10px; flex-shrink: 0; }
+.skill-new { display: grid; gap: 8px; border-top: 1px solid var(--line); padding-top: 12px; }
+.skill-new button { justify-self: start; }
+
+@media (max-width: 850px) {
+  .assistant { grid-template-columns: minmax(0, 1fr); }
+  .assistant-messages { max-height: none; }
+  .assistant-composer { grid-template-columns: minmax(0, 1fr); }
+  .assistant-composer button { justify-self: stretch; }
+  .skill-list li { flex-direction: column; }
+}
 .knowledge-error,
 .knowledge-notice { margin: 0 25px 18px; }
 .knowledge-notice {

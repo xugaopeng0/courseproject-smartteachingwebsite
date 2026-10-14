@@ -113,6 +113,45 @@ export class APIError extends Error {
     this.status = status;
   }
 }
+export type SkillState = {
+  name: string;
+  body: string;
+  enabled: boolean;
+  scope: "platform" | "class";
+};
+export type PromptView = {
+  prompt_body: string;
+  prompt_source: "class" | "platform" | "none";
+  skills: SkillState[];
+  can_edit: boolean;
+  archived: boolean;
+};
+export type ChatSession = {
+  id: string;
+  class_id: string;
+  user_id: string;
+  title: string;
+  message_count: number;
+  mine: boolean;
+  created_at: string;
+  last_message_at?: string;
+};
+export type ChatMessage = {
+  id: string;
+  seq: number;
+  role: "user" | "assistant";
+  status: "complete" | "interrupted" | "failed";
+  content: string;
+  citations: AnswerCitation[];
+  created_at: string;
+};
+export type StreamHandlers = {
+  onDelta: (text: string) => void;
+  onCitations: (citations: AnswerCitation[], messageId: string) => void;
+  onDone: (status: string, messageId: string) => void;
+  onError: (message: string) => void;
+};
+
 export async function api<T>(
   path: string,
   options: RequestInit = {},
@@ -133,10 +172,101 @@ export async function api<T>(
   }
   return body as T;
 }
+
+// streamChatMessage 发送一条消息并逐块读取回答：POST 需要请求体、需要中止控制，
+// 因此用 fetch + ReadableStream 手工解析 SSE，而不是 EventSource。
+export async function streamChatMessage(
+  classID: string,
+  sessionID: string,
+  content: string,
+  handlers: StreamHandlers,
+  signal?: AbortSignal,
+): Promise<void> {
+  const response = await fetch(
+    `/api/classes/${classID}/sessions/${sessionID}/messages`,
+    {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content }),
+      signal,
+    },
+  );
+  if (!response.ok || !response.body) {
+    let message = "发送失败，请稍后再试";
+    try {
+      const payload = await response.json();
+      message = payload.error || message;
+    } catch {
+      // 响应不是 JSON 时保留默认提示。
+    }
+    if (response.status === 401)
+      window.dispatchEvent(new Event("session-expired"));
+    throw new APIError(message, response.status);
+  }
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let event = "";
+  const dispatch = (name: string, data: string) => {
+    if (!data) return;
+    let payload: Record<string, unknown>;
+    try {
+      payload = JSON.parse(data) as Record<string, unknown>;
+    } catch {
+      return;
+    }
+    if (name === "delta") handlers.onDelta(String(payload.text ?? ""));
+    else if (name === "citations")
+      handlers.onCitations(
+        (payload.citations as AnswerCitation[]) ?? [],
+        String(payload.message_id ?? ""),
+      );
+    else if (name === "done")
+      handlers.onDone(
+        String(payload.status ?? "complete"),
+        String(payload.message_id ?? ""),
+      );
+    else if (name === "error") handlers.onError(String(payload.error ?? "回答中断"));
+  };
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() ?? "";
+    for (const line of lines) {
+      if (line.startsWith("event:")) event = line.slice(6).trim();
+      else if (line.startsWith("data:")) dispatch(event, line.slice(5).trim());
+      else if (line.trim() === "") event = "";
+    }
+  }
+}
+
 export const json = (method: string, body?: unknown): RequestInit => ({
   method,
   ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
 });
+export const classPrompts = (id: string) =>
+  api<PromptView>(`/classes/${id}/prompts`);
+export const saveClassPrompt = (id: string, body: string) =>
+  api<PromptView>(`/classes/${id}/prompts`, json("PUT", { body }));
+export const resetClassPrompt = (id: string) =>
+  api<PromptView>(`/classes/${id}/prompts`, json("DELETE"));
+export const saveClassSkill = (
+  id: string,
+  name: string,
+  input: { body?: string; enabled?: boolean },
+) =>
+  api<PromptView>(
+    `/classes/${id}/skills/${encodeURIComponent(name)}`,
+    json("PUT", input),
+  );
+export const removeClassSkill = (id: string, name: string) =>
+  api<PromptView>(
+    `/classes/${id}/skills/${encodeURIComponent(name)}`,
+    json("DELETE"),
+  );
 export const fileURL = (h: Handout, preview = false) =>
   `/api/handouts/${h.id}/file${preview ? "?preview=1" : ""}`;
 export const date = (s: string) =>

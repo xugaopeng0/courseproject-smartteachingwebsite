@@ -6,10 +6,14 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"golang.org/x/crypto/bcrypt"
 )
+
+// sessionLifetime 同时用于浏览器会话与 Bearer 令牌；令牌不自动续期。
+const sessionLifetime = 8 * time.Hour
 
 type credentials struct {
 	Username string `json:"username"`
@@ -71,20 +75,52 @@ func (a *App) login(w http.ResponseWriter, r *http.Request, _ *User) error {
 	if err := decode(w, r, &c); err != nil {
 		return err
 	}
+	u, err := a.authenticate(r, c)
+	if err != nil {
+		return err
+	}
+	return a.session(w, r, u)
+}
+
+// token 用账号密码换取不透明 Bearer 令牌。令牌与浏览器会话共用 sessions 表，
+// 因此撤销路径一致；签发过程不写 Cookie（令牌由调用方自行保存）。
+func (a *App) token(w http.ResponseWriter, r *http.Request, _ *User) error {
+	if a.limited(r) {
+		return fail(429, "操作过于频繁，请 10 分钟后重试")
+	}
+	var c credentials
+	if err := decode(w, r, &c); err != nil {
+		return err
+	}
+	u, err := a.authenticate(r, c)
+	if err != nil {
+		return err
+	}
+	value := randomID(32)
+	expires := time.Now().UTC().Add(sessionLifetime)
+	if _, err = a.db.ExecContext(r.Context(), `INSERT INTO sessions(token_hash,user_id,expires_at) VALUES(?,?,?)`, tokenHash(value), u.ID, expires); err != nil {
+		return err
+	}
+	writeJSON(w, 200, map[string]any{"token": value, "expires_at": expires.Format(time.RFC3339), "user": u})
+	return nil
+}
+
+// authenticate 校验账号密码。错误凭证统一返回 401 且不区分账号是否存在。
+func (a *App) authenticate(r *http.Request, c credentials) (User, error) {
 	u := User{}
 	var hash string
 	err := a.db.QueryRowContext(r.Context(), `SELECT id,username,name,role,password_hash FROM users WHERE username=?`, strings.ToLower(strings.TrimSpace(c.Username))).Scan(&u.ID, &u.Username, &u.Name, &u.Role, &hash)
 	if errors.Is(err, sql.ErrNoRows) {
 		_ = bcrypt.CompareHashAndPassword(dummyHash, []byte(c.Password))
-		return fail(401, "账号或密码错误")
+		return u, fail(401, "账号或密码错误")
 	}
 	if err != nil {
-		return err
+		return u, err
 	}
 	if bcrypt.CompareHashAndPassword([]byte(hash), []byte(c.Password)) != nil {
-		return fail(401, "账号或密码错误")
+		return u, fail(401, "账号或密码错误")
 	}
-	return a.session(w, r, u)
+	return u, nil
 }
 func (a *App) createTeacher(w http.ResponseWriter, r *http.Request, u *User) error {
 	if u.Role != "admin" {

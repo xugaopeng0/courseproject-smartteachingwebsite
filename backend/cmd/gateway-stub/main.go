@@ -18,11 +18,20 @@ import (
 	"math"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
+	"sync/atomic"
+	"time"
 	"unicode/utf8"
 )
 
 const dimensions = 1024
+
+// 调用计数：接口测试用它验证「无命中时不调用对话模型」这类外部可观测的行为。
+var (
+	embeddingCalls atomic.Int64
+	chatCalls      atomic.Int64
+)
 
 // embed 把文本映射成固定维度的确定性向量：字符二元组特征哈希后归一化。
 func embed(text string) []float32 {
@@ -60,7 +69,9 @@ func main() {
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprint(w, "ok")
 	})
-	mux.HandleFunc("/embeddings", func(w http.ResponseWriter, r *http.Request) {
+	// 同一组处理器同时挂在根路径与 /v1 前缀下：真实网关两种写法都有。
+	embeddings := func(w http.ResponseWriter, r *http.Request) {
+		embeddingCalls.Add(1)
 		var body struct {
 			Model string   `json:"model"`
 			Input []string `json:"input"`
@@ -74,10 +85,14 @@ func main() {
 			data = append(data, map[string]any{"embedding": embed(text), "index": len(data)})
 		}
 		writeJSON(w, map[string]any{"object": "list", "model": body.Model, "data": data})
-	})
-	mux.HandleFunc("/chat/completions", func(w http.ResponseWriter, r *http.Request) {
+	}
+	mux.HandleFunc("/embeddings", embeddings)
+	mux.HandleFunc("/v1/embeddings", embeddings)
+	chat := func(w http.ResponseWriter, r *http.Request) {
+		chatCalls.Add(1)
 		var body struct {
 			Model    string `json:"model"`
+			Stream   bool   `json:"stream"`
 			Messages []struct {
 				Role    string `json:"role"`
 				Content string `json:"content"`
@@ -107,6 +122,10 @@ func main() {
 			// 确定性回答：复述第一条材料的开头并标注 [1]，用于验证引用与出处顺序。
 			answer = fmt.Sprintf("依据材料[1]：%s 因此「%s」的答案以该片段为准。", firstLine(excerpt), truncate(question, 30))
 		}
+		if body.Stream {
+			writeSSE(w, body.Model, answer)
+			return
+		}
 		writeJSON(w, map[string]any{
 			"object": "chat.completion",
 			"model":  body.Model,
@@ -115,6 +134,15 @@ func main() {
 				"finish_reason": "stop",
 				"message":       map[string]any{"role": "assistant", "content": answer},
 			}},
+		})
+	}
+	mux.HandleFunc("/chat/completions", chat)
+	mux.HandleFunc("/v1/chat/completions", chat)
+	// 调用计数：接口测试据此断言「无命中不调用对话模型」。
+	mux.HandleFunc("/stats", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, map[string]any{
+			"embeddings": embeddingCalls.Load(),
+			"chat":       chatCalls.Load(),
 		})
 	})
 	log.Printf("gateway stub listening on %s", address)
@@ -140,6 +168,46 @@ func truncate(text string, limit int) string {
 func writeJSON(w http.ResponseWriter, payload any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	_ = json.NewEncoder(w).Encode(payload)
+}
+
+// writeSSE 按 OpenAI 的流式格式逐块返回：本地开发时用来验证逐字显示与中断处理。
+// 分片间隔可以用 STUB_CHUNK_DELAY_MS 调大，便于人工观察或测试「停止生成」。
+func writeSSE(w http.ResponseWriter, model, answer string) {
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(http.StatusOK)
+	delay := 40 * time.Millisecond
+	if raw := os.Getenv("STUB_CHUNK_DELAY_MS"); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil && parsed >= 0 {
+			delay = time.Duration(parsed) * time.Millisecond
+		}
+	}
+	runes := []rune(answer)
+	const chunkSize = 6
+	for start := 0; start < len(runes); start += chunkSize {
+		end := start + chunkSize
+		if end > len(runes) {
+			end = len(runes)
+		}
+		payload, _ := json.Marshal(map[string]any{
+			"object": "chat.completion.chunk",
+			"model":  model,
+			"choices": []map[string]any{{
+				"index": 0,
+				"delta": map[string]any{"content": string(runes[start:end])},
+			}},
+		})
+		fmt.Fprintf(w, "data: %s\n\n", payload)
+		flusher.Flush()
+		time.Sleep(delay)
+	}
+	fmt.Fprint(w, "data: [DONE]\n\n")
+	flusher.Flush()
 }
 
 func env(key, fallback string) string {

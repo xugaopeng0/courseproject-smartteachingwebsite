@@ -11,6 +11,9 @@ import {
   ArrowLeft,
   ArrowRight,
   LogOut,
+  Sparkles,
+  SendHorizontal,
+  Square,
   ChevronRight,
   Download,
   Eye,
@@ -36,6 +39,12 @@ import {
   date,
   size,
   APIError,
+  classPrompts,
+  saveClassPrompt,
+  resetClassPrompt,
+  saveClassSkill,
+  removeClassSkill,
+  streamChatMessage,
   type User,
   type Classroom,
   type Handout,
@@ -45,6 +54,9 @@ import {
   type KnowledgeSource,
   type KnowledgeAnswer,
   type RetrievalMode,
+  type PromptView,
+  type ChatSession,
+  type ChatMessage,
 } from "./api";
 import "./styles.css";
 
@@ -353,6 +365,20 @@ function App() {
   >([]);
   const [knowledgeBusy, setKnowledgeBusy] = useState(false);
   const [knowledgeError, setKnowledgeError] = useState("");
+  // 解题助手：会话、流式回答与提示词管理
+  const [chatSessions, setChatSessions] = useState<ChatSession[]>([]);
+  const [chatSession, setChatSession] = useState<ChatSession | null>(null);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [chatDraft, setChatDraft] = useState("");
+  const [chatStreaming, setChatStreaming] = useState(false);
+  const [chatError, setChatError] = useState("");
+  const [chatNotice, setChatNotice] = useState("");
+  const chatAbort = useRef<AbortController | null>(null);
+  const [prompts, setPrompts] = useState<PromptView | null>(null);
+  const [promptDraft, setPromptDraft] = useState("");
+  const [promptBusy, setPromptBusy] = useState(false);
+  const [promptError, setPromptError] = useState("");
+  const [newSkill, setNewSkill] = useState({ name: "", body: "" });
   const knowledgeRequest = useRef(0);
   const knowledgeDocumentsRequest = useRef(0);
   const revisionRef = useRef(0);
@@ -661,6 +687,170 @@ function App() {
     vector: "语义",
     hybrid: "混合",
   };
+
+  const loadPrompts = async () => {
+    if (!detail) return;
+    try {
+      const view = await classPrompts(detail.classroom.id);
+      setPrompts(view);
+      setPromptDraft(view.prompt_body);
+      setPromptError("");
+    } catch (error) {
+      setPromptError((error as Error).message);
+    }
+  };
+  const applyPromptView = (view: PromptView) => {
+    setPrompts(view);
+    setPromptDraft(view.prompt_body);
+  };
+  const runPromptAction = async (action: () => Promise<PromptView>) => {
+    setPromptBusy(true);
+    setPromptError("");
+    try {
+      applyPromptView(await action());
+    } catch (error) {
+      setPromptError((error as Error).message);
+    } finally {
+      setPromptBusy(false);
+    }
+  };
+
+  const loadSessions = async () => {
+    if (!detail) return;
+    try {
+      const payload = await api<{ sessions: ChatSession[] }>(
+        `/classes/${detail.classroom.id}/sessions`,
+      );
+      setChatSessions(payload.sessions);
+      setChatError("");
+    } catch (error) {
+      setChatError((error as Error).message);
+    }
+  };
+  const openSession = async (session: ChatSession) => {
+    if (!detail) return;
+    try {
+      const payload = await api<{
+        session: ChatSession;
+        messages: ChatMessage[];
+      }>(`/classes/${detail.classroom.id}/sessions/${session.id}`);
+      setChatSession(payload.session);
+      setChatMessages(payload.messages);
+      setChatError("");
+    } catch (error) {
+      setChatError((error as Error).message);
+    }
+  };
+  const startSession = async () => {
+    if (!detail) return;
+    try {
+      const session = await api<ChatSession>(
+        `/classes/${detail.classroom.id}/sessions`,
+        json("POST", {}),
+      );
+      setChatSessions((list) => [session, ...list]);
+      await openSession(session);
+    } catch (error) {
+      setChatError((error as Error).message);
+    }
+  };
+  const stopStreaming = () => {
+    chatAbort.current?.abort();
+    chatAbort.current = null;
+    setChatStreaming(false);
+  };
+  const sendChat = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!detail || !chatSession || chatStreaming) return;
+    const content = chatDraft.trim();
+    if (!content) return;
+    setChatDraft("");
+    setChatError("");
+    setChatNotice("");
+    setChatStreaming(true);
+    const placeholder: ChatMessage = {
+      id: "streaming",
+      seq: chatMessages.length + 2,
+      role: "assistant",
+      status: "complete",
+      content: "",
+      citations: [],
+      created_at: new Date().toISOString(),
+    };
+    setChatMessages((list) => [
+      ...list,
+      {
+        id: "pending",
+        seq: list.length + 1,
+        role: "user",
+        status: "complete",
+        content,
+        citations: [],
+        created_at: new Date().toISOString(),
+      },
+      placeholder,
+    ]);
+    const controller = new AbortController();
+    chatAbort.current = controller;
+    let streamed = "";
+    try {
+      await streamChatMessage(
+        detail.classroom.id,
+        chatSession.id,
+        content,
+        {
+          onDelta: (text) => {
+            streamed += text;
+            setChatMessages((list) =>
+              list.map((message) =>
+                message.id === "streaming"
+                  ? { ...message, content: streamed }
+                  : message,
+              ),
+            );
+          },
+          onCitations: (citations) => {
+            setChatMessages((list) =>
+              list.map((message) =>
+                message.id === "streaming" ? { ...message, citations } : message,
+              ),
+            );
+          },
+          onDone: (status) => {
+            if (status === "no_matches" || status === "no_ready_documents")
+              setChatNotice("资料中未找到相关内容");
+            if (status === "interrupted")
+              setChatNotice("回答中断，已保留收到的部分");
+          },
+          onError: (message) => setChatError(message),
+        },
+        controller.signal,
+      );
+    } catch (error) {
+      if ((error as Error).name === "AbortError") {
+        // 先本地标记为已中断，再等服务端把中断状态写完（否则刷新可能看不到这条消息）。
+        setChatMessages((list) =>
+          list.map((message) =>
+            message.id === "streaming"
+              ? {
+                  ...message,
+                  status: "interrupted" as const,
+                  content: streamed || "（已停止生成）",
+                }
+              : message,
+          ),
+        );
+        setChatNotice("已停止生成，回答以中断状态保存");
+        await new Promise((done) => setTimeout(done, 600));
+      } else setChatError((error as Error).message);
+    } finally {
+      chatAbort.current = null;
+      setChatStreaming(false);
+      // 用服务端结果替换占位消息，保证顺序号与状态一致。
+      await openSession(chatSession);
+      await loadSessions();
+    }
+  };
   const knowledgeLabels: Record<string, string> = {
     not_indexed: "待建立",
     queued: "排队中",
@@ -678,6 +868,159 @@ function App() {
     temporary_failure: "本地模型暂不可用，可稍后重试",
     source_changed: "讲义内容已变化，请重新建立",
   };
+  const renderAssistant = () => (
+    <div className="assistant">
+      <aside className="assistant-side">
+        <div className="assistant-side-head">
+          <h3>会话</h3>
+          <button
+            className="text-button"
+            onClick={startSession}
+            disabled={detail!.classroom.archived}
+          >
+            <Plus size={15} /> 新建
+          </button>
+        </div>
+        {chatSessions.length === 0 ? (
+          <p className="knowledge-muted">还没有会话，点「新建」开始提问。</p>
+        ) : (
+          <ul className="session-list">
+            {chatSessions.map((session) => (
+              <li key={session.id}>
+                <button
+                  className={chatSession?.id === session.id ? "active" : ""}
+                  onClick={() => openSession(session)}
+                >
+                  <strong>{session.title || "新会话"}</strong>
+                  <small>
+                    {session.mine ? "我" : "本班同学"} · {session.message_count} 条
+                  </small>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </aside>
+      <section className="assistant-main">
+        {chatSession ? (
+          <>
+            <header className="assistant-head">
+              <strong>{chatSession.title || "新会话"}</strong>
+              <small>回答先检索本班讲义，标注出处；无依据时不会生成内容。</small>
+            </header>
+            <div className="assistant-messages">
+              {chatMessages.map((message) => (
+                <article
+                  key={message.id}
+                  className={`bubble ${message.role}${message.status === "interrupted" ? " interrupted" : ""}`}
+                >
+                  <div className="bubble-meta">
+                    <span>{message.role === "user" ? "我" : "解题助手"}</span>
+                    {message.status === "interrupted" && <em>已中断</em>}
+                  </div>
+                  <p className={message.id === "streaming" && chatStreaming ? "streaming" : ""}>
+                    {message.content || (message.id === "streaming" ? "正在检索并思考…" : "")}
+                  </p>
+                  {message.citations.length > 0 && (
+                    <ol className="knowledge-citations">
+                      {message.citations.map((citation) => (
+                        <li key={citation.chunk_id}>
+                          <span className="citation-index">[{citation.index}]</span>
+                          <div>
+                            <strong>{citation.title}</strong>
+                            <small>
+                              第 {citation.ordinal} 片 · 第 {citation.char_start + 1}–
+                              {citation.char_end} 字 · {citation.locator.label}
+                            </small>
+                            <p>{citation.content}</p>
+                            <div className="citation-actions">
+                              <button
+                                className="text-button"
+                                onClick={() => openKnowledgeSource(citation.chunk_id)}
+                              >
+                                <FileText size={15} /> 查看原文出处
+                              </button>
+                              <a className="text-button" href={citation.download_url}>
+                                <Download size={15} /> 下载原文件
+                              </a>
+                            </div>
+                          </div>
+                        </li>
+                      ))}
+                    </ol>
+                  )}
+                </article>
+              ))}
+            </div>
+            {knowledgeSource && (
+              <div className="source-card assistant-source">
+                <strong>{knowledgeSource.title}</strong>
+                <span>
+                  {knowledgeSource.filename} · {knowledgeSource.locator.label}
+                </span>
+                <p>{knowledgeSource.content}</p>
+                <div className="source-actions">
+                  <a className="secondary" href={knowledgeSource.download_url}>
+                    <Download size={15} /> 下载原文件
+                  </a>
+                  <button className="text-button" onClick={() => setKnowledgeSource(null)}>
+                    收起
+                  </button>
+                </div>
+              </div>
+            )}
+            {chatNotice && <p className="assistant-notice">{chatNotice}</p>}
+            {chatError && (
+              <p className="error knowledge-error" role="alert">
+                {chatError}
+              </p>
+            )}
+            <form className="assistant-composer" onSubmit={sendChat}>
+              <textarea
+                value={chatDraft}
+                onChange={(event) => setChatDraft(event.target.value)}
+                placeholder={
+                  detail!.classroom.archived
+                    ? "班级已归档，不能再提问"
+                    : "提出你的问题，回答会逐字显示并标注出处"
+                }
+                disabled={detail!.classroom.archived || chatStreaming}
+                rows={2}
+                aria-label="输入问题"
+              />
+              {chatStreaming ? (
+                <button type="button" className="secondary" onClick={stopStreaming}>
+                  <Square size={15} /> 停止生成
+                </button>
+              ) : (
+                <button
+                  className="primary"
+                  disabled={detail!.classroom.archived || !chatDraft.trim()}
+                >
+                  <SendHorizontal size={16} /> 发送
+                </button>
+              )}
+            </form>
+          </>
+        ) : (
+          <div className="assistant-placeholder">
+            <Sparkles size={26} />
+            <strong>解题助手</strong>
+            <p>
+              先检索本班讲义，命中后依据片段回答，并逐字显示、标注可核对的出处；没有依据时直接说明未找到。
+            </p>
+            <button
+              className="primary"
+              onClick={startSession}
+              disabled={detail!.classroom.archived}
+            >
+              <Plus size={16} /> 新建会话
+            </button>
+          </div>
+        )}
+      </section>
+    </div>
+  );
   const renderKnowledge = () => (
     <div className="knowledge-layout">
       <div className="knowledge-main">
@@ -1237,8 +1580,21 @@ function App() {
                           班级成员 <span>{detail.members.length}</span>
                         </button>
                         <button
+                          className={tab === "assistant" ? "active" : ""}
+                          onClick={() => {
+                            setTab("assistant");
+                            setKnowledgeSource(null);
+                            void loadSessions();
+                          }}
+                        >
+                          解题助手
+                        </button>
+                        <button
                           className={tab === "settings" ? "active" : ""}
-                          onClick={() => setTab("settings")}
+                          onClick={() => {
+                            setTab("settings");
+                            if (owner) void loadPrompts();
+                          }}
                         >
                           班级设置
                         </button>
@@ -1266,6 +1622,8 @@ function App() {
                         </>
                       ) : tab === "knowledge" ? (
                         renderKnowledge()
+                      ) : tab === "assistant" ? (
+                        renderAssistant()
                       ) : tab === "members" ? (
                         <>
                           <div className="section-heading">
@@ -1313,7 +1671,150 @@ function App() {
                           ))}
                         </>
                       ) : (
-                        <div className="settings-row">
+                        <>
+                          {owner && (
+                            <section className="prompt-editor">
+                              <div className="section-heading">
+                                <div>
+                                  <h2>提示词与技能</h2>
+                                  <p>
+                                    提示词决定回答的语气与边界；「解题引导」只给思路与追问，不直接给最终答案。
+                                  </p>
+                                </div>
+                                <span className="badge">
+                                  {prompts?.prompt_source === "class"
+                                    ? "使用班级提示词"
+                                    : "使用平台默认"}
+                                </span>
+                              </div>
+                              {promptError && (
+                                <p className="error knowledge-error" role="alert">
+                                  {promptError}
+                                </p>
+                              )}
+                              <label className="prompt-field">
+                                <span>班级提示词</span>
+                                <textarea
+                                  value={promptDraft}
+                                  onChange={(event) => setPromptDraft(event.target.value)}
+                                  rows={4}
+                                  maxLength={2000}
+                                  disabled={
+                                    promptBusy || detail.classroom.archived || !prompts?.can_edit
+                                  }
+                                  aria-label="班级提示词"
+                                />
+                              </label>
+                              <div className="prompt-actions">
+                                <button
+                                  className="primary"
+                                  disabled={promptBusy || detail.classroom.archived || !promptDraft.trim()}
+                                  onClick={() =>
+                                    runPromptAction(() =>
+                                      saveClassPrompt(detail.classroom.id, promptDraft),
+                                    )
+                                  }
+                                >
+                                  <Check size={16} /> 保存提示词
+                                </button>
+                                <button
+                                  className="secondary"
+                                  disabled={promptBusy || detail.classroom.archived}
+                                  onClick={() =>
+                                    runPromptAction(() => resetClassPrompt(detail.classroom.id))
+                                  }
+                                >
+                                  <RotateCcw size={16} /> 恢复平台默认
+                                </button>
+                              </div>
+                              <ul className="skill-list">
+                                {(prompts?.skills ?? []).map((skill) => (
+                                  <li key={skill.name}>
+                                    <div>
+                                      <strong>{skill.name}</strong>
+                                      <small>
+                                        {skill.scope === "class" ? "班级覆盖" : "平台"} ·{" "}
+                                        {skill.enabled ? "启用中" : "已停用"}
+                                      </small>
+                                      <p>{skill.body}</p>
+                                    </div>
+                                    <div className="skill-actions">
+                                      <button
+                                        className="text-button"
+                                        disabled={promptBusy || detail.classroom.archived}
+                                        onClick={() =>
+                                          runPromptAction(() =>
+                                            saveClassSkill(detail.classroom.id, skill.name, {
+                                              enabled: !skill.enabled,
+                                            }),
+                                          )
+                                        }
+                                      >
+                                        {skill.enabled ? "停用" : "启用"}
+                                      </button>
+                                      {skill.scope === "class" && (
+                                        <button
+                                          className="text-button danger"
+                                          disabled={promptBusy || detail.classroom.archived}
+                                          onClick={() =>
+                                            runPromptAction(() =>
+                                              removeClassSkill(detail.classroom.id, skill.name),
+                                            )
+                                          }
+                                        >
+                                          移除覆盖
+                                        </button>
+                                      )}
+                                    </div>
+                                  </li>
+                                ))}
+                              </ul>
+                              <div className="skill-new">
+                                <input
+                                  placeholder="技能名，例如：逐步提示"
+                                  value={newSkill.name}
+                                  maxLength={60}
+                                  onChange={(event) =>
+                                    setNewSkill({ ...newSkill, name: event.target.value })
+                                  }
+                                  aria-label="新技能名称"
+                                />
+                                <textarea
+                                  placeholder="技能正文：要求模型如何引导"
+                                  value={newSkill.body}
+                                  rows={2}
+                                  maxLength={2000}
+                                  onChange={(event) =>
+                                    setNewSkill({ ...newSkill, body: event.target.value })
+                                  }
+                                  aria-label="新技能正文"
+                                />
+                                <button
+                                  className="secondary"
+                                  disabled={
+                                    promptBusy ||
+                                    detail.classroom.archived ||
+                                    !newSkill.name.trim() ||
+                                    !newSkill.body.trim()
+                                  }
+                                  onClick={() =>
+                                    runPromptAction(async () => {
+                                      const view = await saveClassSkill(
+                                        detail.classroom.id,
+                                        newSkill.name.trim(),
+                                        { body: newSkill.body.trim(), enabled: true },
+                                      );
+                                      setNewSkill({ name: "", body: "" });
+                                      return view;
+                                    })
+                                  }
+                                >
+                                  <Plus size={16} /> 添加技能
+                                </button>
+                              </div>
+                            </section>
+                          )}
+                          <div className="settings-row">
                           <div>
                             <h3>
                               {owner
@@ -1378,7 +1879,8 @@ function App() {
                                 : "归档班级"
                               : "退出班级"}
                           </button>
-                        </div>
+                          </div>
+                        </>
                       )}
                     </section>
                   </>

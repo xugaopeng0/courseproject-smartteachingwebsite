@@ -67,6 +67,24 @@ MySQL 的启动参数在 Compose 中固定为 `--character-set-server=utf8mb4 --
 
 图片、批注、演讲者备注、嵌入附件和复杂图表不保证覆盖。来源文本在 React 中作为普通文本显示，不渲染文档 HTML 或脚本。
 
+## 提示词、技能与解题助手
+
+平台在启动时幂等写入一份默认提示词与内置「解题引导」技能（`prompts` 表：`scope=platform`、`kind=prompt|skill`）；班级可以覆盖提示词，也可以按名覆盖或停用某个技能，生效顺序与接口见 `docs/api.md`。约定：平台级内容只有管理员能改，班级级只有所属教师能改，学生只读，归档班级只读。会话与消息存在 `chat_sessions` / `chat_messages`：用户消息在流开始前落库，助手消息按 `complete` / `interrupted` 记录状态。
+
+「解题助手」（班级详情页的独立标签）复用第 4 课的检索、材料组装与出处生成：每次提问先做本班混合检索取前 4 条，命中才调用对话模型，回答以 SSE 逐块返回，结束前给出出处列表；没有命中时只返回「资料中未找到相关内容」且不调用对话模型；客户端中途断开时已收增量按 `interrupted` 保存。内置「解题引导」技能要求模型只给思路与追问、不直接给最终答案——它是提示词层面的约束，服务端的硬边界仍是「无命中不生成」与「出处由服务端生成」。
+
+无 Docker 时也能验证整条链路：`npm run dev:local` 会同时启动便携 MySQL、便携 Qdrant、API、worker 与 Vite；把嵌入与对话指向仓库自带的开发替身即可（替身支持 `/v1` 前缀与 SSE 流式）：
+
+```powershell
+cd backend; go build -o ..\.local\gateway-stub\stub.exe .\cmd\gateway-stub; cd ..
+$env:PORT = "11500"; $env:STUB_CHUNK_DELAY_MS = "300"; .local\gateway-stub\stub.exe   # 另开终端
+$env:EMBEDDING_BASE_URL = "http://127.0.0.1:11500/v1"; $env:EMBEDDING_MODEL = "stub-lexical-1024"
+$env:GATEWAY_BASE_URL  = "http://127.0.0.1:11500/v1"; $env:CHAT_MODEL = "stub-chat"
+npm run dev:local
+```
+
+替身是确定性开发工具，不是语义模型：可以验证权限、状态、流式协议、引用顺序与前端流程，不能作为召回质量证据。
+
 ## 配置与故障
 
 `.env` 可设置：

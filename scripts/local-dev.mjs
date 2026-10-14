@@ -32,27 +32,34 @@ await mysql.start();
 // 向量库同样用便携二进制：本地预览的知识库页面因此可以真正跑起来（索引仍需可用的课程网关）。
 const qdrant = new LocalQdrant({ port: Number(process.env.QDRANT_PORT || 16333) });
 await qdrant.start();
-const api = spawn(
-  resolve(local, process.platform === "win32" ? "server.exe" : "server"),
-  [],
-  {
-    cwd: root,
-    windowsHide: true,
-    stdio: "inherit",
-    env: {
-      ...process.env,
-      DATABASE_URL: mysql.databaseUrl,
-      ADMIN_PASSWORD: config.admin,
-      UPLOAD_DIR: resolve(local, "uploads"),
-      APP_ORIGIN: "http://127.0.0.1:5173",
-      KNOWLEDGE_ENABLED: "true",
-      QDRANT_URL: qdrant.url,
-      QDRANT_COLLECTION: process.env.QDRANT_COLLECTION || "campusclaw_chunks",
-      EMBEDDING_DIMENSIONS: process.env.EMBEDDING_DIMENSIONS || "1024",
-      EMBEDDING_PROFILE_ID: process.env.EMBEDDING_PROFILE_ID || "gateway-embedding-v1",
-    },
-  },
-);
+const serverBinary = resolve(local, process.platform === "win32" ? "server.exe" : "server");
+const sharedEnv = {
+  ...process.env,
+  DATABASE_URL: mysql.databaseUrl,
+  ADMIN_PASSWORD: config.admin,
+  UPLOAD_DIR: resolve(local, "uploads"),
+  APP_ORIGIN: "http://127.0.0.1:5173",
+  KNOWLEDGE_ENABLED: "true",
+  QDRANT_URL: qdrant.url,
+  QDRANT_COLLECTION: process.env.QDRANT_COLLECTION || "campusclaw_chunks",
+  EMBEDDING_DIMENSIONS: process.env.EMBEDDING_DIMENSIONS || "1024",
+  EMBEDDING_PROFILE_ID: process.env.EMBEDDING_PROFILE_ID || "gateway-embedding-v1",
+  // worker 不导入种子材料，避免与 API 重复。
+  SEED_ENABLED: "false",
+};
+const api = spawn(serverBinary, [], {
+  cwd: root,
+  windowsHide: true,
+  stdio: "inherit",
+  env: sharedEnv,
+});
+// 本地也要有 worker：否则上传的讲义永远不会被切片与索引，知识库页面只能显示“尚无可检索的讲义”。
+const worker = spawn(serverBinary, ["worker"], {
+  cwd: root,
+  windowsHide: true,
+  stdio: "inherit",
+  env: sharedEnv,
+});
 const web = spawn(
   process.execPath,
   [
@@ -72,6 +79,7 @@ async function stop() {
   if (stopping) return;
   stopping = true;
   api.kill();
+  worker.kill();
   web.kill();
   await qdrant.stop();
   await mysql.stop();
@@ -80,4 +88,5 @@ async function stop() {
 process.on("SIGINT", stop);
 process.on("SIGTERM", stop);
 api.on("exit", stop);
+worker.on("exit", stop);
 web.on("exit", stop);
