@@ -5,54 +5,126 @@
     "version": "0.5.0",
     "description": "班级、讲义与班级知识库的 HTTP 接口。所有路径以 /api 开头，错误统一为 `{ \"error\": \"可读的中文错误\" }`。\n\n鉴权有两种呈递方式，共用同一张会话表，因此登出、过期或失去班级成员身份都会立即失效：\n- **cookieAuth**：浏览器登录后由服务端下发的 HttpOnly Cookie（`teaching_session`）；带 Cookie 的写请求还必须来自本站来源（防 CSRF）。\n- **bearerAuth**：用 `POST /api/auth/token` 换取的不透明令牌，放在 `Authorization: Bearer <token>`。只带令牌的请求不做同源校验。\n\n在文档页面点击右上角 **Authorize**，填入令牌即可试调受保护接口；令牌可用 `POST /api/auth/token`（账号密码）获取。\n\n会话回答 `POST /api/classes/{id}/sessions/{sid}/messages` 返回 `text/event-stream`：事件依次为若干 `delta`（增量文本）、`citations`（出处列表）与 `done`（结束状态），每 15 秒一次 `: heartbeat` 注释行保活。"
   },
-  "servers": [{ "url": "/", "description": "同源访问（本机部署为 http://localhost:8080）" }],
+  "servers": [
+    {
+      "url": "/",
+      "description": "同源访问（本机部署为 http://localhost:8080）"
+    }
+  ],
   "tags": [
-    { "name": "auth", "description": "注册、登录、令牌与会话" },
-    { "name": "admin", "description": "管理员：教师账号与平台提示词" },
-    { "name": "classes", "description": "班级与成员" },
-    { "name": "handouts", "description": "讲义上传、下载与删除" },
-    { "name": "knowledge", "description": "索引状态、检索、问答与出处" },
-    { "name": "prompts", "description": "提示词与技能" },
-    { "name": "sessions", "description": "解题助手会话与流式回答" }
+    {
+      "name": "auth",
+      "description": "注册、登录、令牌与会话"
+    },
+    {
+      "name": "admin",
+      "description": "管理员：教师账号与平台提示词"
+    },
+    {
+      "name": "classes",
+      "description": "班级与成员"
+    },
+    {
+      "name": "handouts",
+      "description": "讲义上传、下载与删除"
+    },
+    {
+      "name": "knowledge",
+      "description": "索引状态、检索、问答与出处"
+    },
+    {
+      "name": "prompts",
+      "description": "提示词与技能"
+    },
+    {
+      "name": "sessions",
+      "description": "解题助手会话与流式回答"
+    }
   ],
   "paths": {
     "/api/health": {
       "get": {
-        "tags": ["auth"],
+        "tags": [
+          "auth"
+        ],
         "summary": "健康检查",
         "description": "检查数据库连接是否可用，供部署脚本与探针使用。",
         "security": [],
         "responses": {
-          "200": { "description": "服务与数据库均可用", "content": { "application/json": { "schema": { "type": "object", "properties": { "status": { "type": "string", "const": "ok" } }, "required": ["status"] } } } },
-          "503": { "$ref": "#/components/responses/Unavailable" }
+          "200": {
+            "description": "服务与数据库均可用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "const": "ok"
+                    }
+                  },
+                  "required": [
+                    "status"
+                  ]
+                }
+              }
+            }
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
         }
       }
     },
     "/api/openapi.json": {
       "get": {
-        "tags": ["auth"],
+        "tags": [
+          "auth"
+        ],
         "summary": "OpenAPI 契约",
         "description": "返回本文件的原始内容，供接口工具与文档页面消费。",
         "security": [],
         "responses": {
-          "200": { "description": "OpenAPI 3.1 描述", "content": { "application/json": { "schema": { "type": "object" } } } }
+          "200": {
+            "description": "OpenAPI 3.1 描述",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
         }
       }
     },
     "/api/docs": {
       "get": {
-        "tags": ["auth"],
+        "tags": [
+          "auth"
+        ],
         "summary": "接口文档页面",
         "description": "自托管的 Swagger UI 页面：只引用本站资源，离线环境同样可用；填入 Bearer 令牌即可试调受保护接口。",
         "security": [],
         "responses": {
-          "200": { "description": "文档页面 HTML", "content": { "text/html": { "schema": { "type": "string" } } } }
+          "200": {
+            "description": "文档页面 HTML",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
         }
       }
     },
     "/api/docs/{asset}": {
       "get": {
-        "tags": ["auth"],
+        "tags": [
+          "auth"
+        ],
         "summary": "文档页面静态资源",
         "security": [],
         "parameters": [
@@ -62,53 +134,143 @@
             "required": true,
             "schema": {
               "type": "string",
-              "enum": ["swagger-ui.css", "swagger-ui-bundle.js", "swagger-ui-standalone-preset.js", "favicon-16x16.png", "favicon-32x32.png", "LICENSE", "NOTICE"]
+              "enum": [
+                "swagger-ui.css",
+                "swagger-ui-bundle.js",
+                "swagger-ui-standalone-preset.js",
+                "favicon-16x16.png",
+                "favicon-32x32.png",
+                "LICENSE",
+                "NOTICE"
+              ]
             }
           }
         ],
         "responses": {
-          "200": { "description": "资源内容", "content": { "application/octet-stream": { "schema": { "type": "string", "format": "binary" } } } },
-          "404": { "$ref": "#/components/responses/NotFound" }
+          "200": {
+            "description": "资源内容",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
         }
       }
     },
     "/api/auth/register": {
       "post": {
-        "tags": ["auth"],
+        "tags": [
+          "auth"
+        ],
         "summary": "学生注册",
         "description": "只能创建学生账号；成功后直接建立会话并下发 Cookie。",
         "security": [],
-        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Credentials" } } } },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Credentials"
+              }
+            }
+          }
+        },
         "responses": {
-          "200": { "description": "注册成功并已登录", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/User" } } } },
-          "400": { "$ref": "#/components/responses/BadRequest" },
-          "409": { "description": "账号已被使用", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
-          "429": { "$ref": "#/components/responses/RateLimited" }
+          "200": {
+            "description": "注册成功并已登录",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/User"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "409": {
+            "description": "账号已被使用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
         }
       }
     },
     "/api/auth/login": {
       "post": {
-        "tags": ["auth"],
+        "tags": [
+          "auth"
+        ],
         "summary": "登录",
         "description": "校验账号密码并下发 HttpOnly 会话 Cookie。",
         "security": [],
-        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Login" } } } },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Login"
+              }
+            }
+          }
+        },
         "responses": {
-          "200": { "description": "登录成功", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/User" } } } },
-          "400": { "$ref": "#/components/responses/BadRequest" },
-          "401": { "$ref": "#/components/responses/Unauthorized" },
-          "429": { "$ref": "#/components/responses/RateLimited" }
+          "200": {
+            "description": "登录成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/User"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
         }
       }
     },
     "/api/auth/token": {
       "post": {
-        "tags": ["auth"],
+        "tags": [
+          "auth"
+        ],
         "summary": "换取 Bearer 令牌",
         "description": "用账号密码换取不透明令牌，供接口工具与文档页面试调使用。令牌只存哈希，有效期 8 小时且不自动续期；**响应不写 Cookie**。",
         "security": [],
-        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Login" } } } },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Login"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "签发成功",
@@ -116,280 +278,924 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "required": ["token", "expires_at", "user"],
+                  "required": [
+                    "token",
+                    "expires_at",
+                    "user"
+                  ],
                   "properties": {
-                    "token": { "type": "string", "description": "不透明令牌，请自行保存" },
-                    "expires_at": { "type": "string", "format": "date-time" },
-                    "user": { "$ref": "#/components/schemas/User" }
+                    "token": {
+                      "type": "string",
+                      "description": "不透明令牌，请自行保存"
+                    },
+                    "expires_at": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "user": {
+                      "$ref": "#/components/schemas/User"
+                    }
                   }
                 }
               }
             }
           },
-          "401": { "$ref": "#/components/responses/Unauthorized" },
-          "429": { "$ref": "#/components/responses/RateLimited" }
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
         }
       }
     },
     "/api/auth/logout": {
       "post": {
-        "tags": ["auth"],
+        "tags": [
+          "auth"
+        ],
         "summary": "退出登录 / 撤销令牌",
         "description": "撤销本次请求实际使用的凭证（Cookie 会话或 Bearer 令牌），并清除浏览器 Cookie。",
         "security": [],
         "responses": {
-          "200": { "description": "已撤销", "content": { "application/json": { "schema": { "type": "object", "properties": { "ok": { "type": "boolean" } } } } } },
-          "403": { "$ref": "#/components/responses/Forbidden" }
+          "200": {
+            "description": "已撤销",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
         }
       }
     },
     "/api/auth/me": {
       "get": {
-        "tags": ["auth"],
+        "tags": [
+          "auth"
+        ],
         "summary": "当前用户",
-        "security": [{ "cookieAuth": [] }, { "bearerAuth": [] }],
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
         "responses": {
-          "200": { "description": "当前登录用户", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/User" } } } },
-          "401": { "$ref": "#/components/responses/Unauthorized" }
+          "200": {
+            "description": "当前登录用户",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/User"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
         }
       }
     },
     "/api/admin/teachers": {
       "get": {
-        "tags": ["admin"],
+        "tags": [
+          "admin"
+        ],
         "summary": "教师账号列表",
-        "security": [{ "cookieAuth": [] }, { "bearerAuth": [] }],
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
         "responses": {
-          "200": { "description": "教师列表", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/User" } } } } },
-          "401": { "$ref": "#/components/responses/Unauthorized" },
-          "403": { "$ref": "#/components/responses/Forbidden" }
+          "200": {
+            "description": "教师列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/User"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
         }
       },
       "post": {
-        "tags": ["admin"],
+        "tags": [
+          "admin"
+        ],
         "summary": "创建教师账号",
-        "security": [{ "cookieAuth": [] }, { "bearerAuth": [] }],
-        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Credentials" } } } },
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Credentials"
+              }
+            }
+          }
+        },
         "responses": {
-          "201": { "description": "创建成功", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/User" } } } },
-          "400": { "$ref": "#/components/responses/BadRequest" },
-          "401": { "$ref": "#/components/responses/Unauthorized" },
-          "403": { "$ref": "#/components/responses/Forbidden" },
-          "409": { "description": "账号已被使用", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+          "201": {
+            "description": "创建成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/User"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "description": "账号已被使用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
         }
       }
     },
     "/api/admin/prompts": {
       "get": {
-        "tags": ["admin", "prompts"],
+        "tags": [
+          "admin",
+          "prompts"
+        ],
         "summary": "读取平台提示词与技能",
-        "security": [{ "cookieAuth": [] }, { "bearerAuth": [] }],
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
         "responses": {
-          "200": { "description": "平台级状态", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PromptView" } } } },
-          "401": { "$ref": "#/components/responses/Unauthorized" },
-          "403": { "$ref": "#/components/responses/Forbidden" }
+          "200": {
+            "description": "平台级状态",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromptView"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
         }
       },
       "put": {
-        "tags": ["admin", "prompts"],
+        "tags": [
+          "admin",
+          "prompts"
+        ],
         "summary": "修改平台默认提示词",
-        "security": [{ "cookieAuth": [] }, { "bearerAuth": [] }],
-        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PromptInput" } } } },
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PromptInput"
+              }
+            }
+          }
+        },
         "responses": {
-          "200": { "description": "保存后的平台状态", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PromptView" } } } },
-          "400": { "$ref": "#/components/responses/BadRequest" },
-          "403": { "$ref": "#/components/responses/Forbidden" }
+          "200": {
+            "description": "保存后的平台状态",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromptView"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
         }
       }
     },
     "/api/admin/skills/{name}": {
       "put": {
-        "tags": ["admin", "prompts"],
+        "tags": [
+          "admin",
+          "prompts"
+        ],
         "summary": "维护平台技能",
         "description": "内置「解题引导」技能允许停用，但正文不能清空；`body` 省略表示只调整 `enabled`。",
-        "security": [{ "cookieAuth": [] }, { "bearerAuth": [] }],
-        "parameters": [{ "$ref": "#/components/parameters/SkillName" }],
-        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SkillInput" } } } },
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/SkillName"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SkillInput"
+              }
+            }
+          }
+        },
         "responses": {
-          "200": { "description": "保存后的平台状态", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PromptView" } } } },
-          "400": { "$ref": "#/components/responses/BadRequest" },
-          "403": { "$ref": "#/components/responses/Forbidden" }
+          "200": {
+            "description": "保存后的平台状态",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromptView"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
         }
       },
       "delete": {
-        "tags": ["admin", "prompts"],
+        "tags": [
+          "admin",
+          "prompts"
+        ],
         "summary": "删除平台技能",
         "description": "内置「解题引导」不允许删除，只能停用。",
-        "security": [{ "cookieAuth": [] }, { "bearerAuth": [] }],
-        "parameters": [{ "$ref": "#/components/parameters/SkillName" }],
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/SkillName"
+          }
+        ],
         "responses": {
-          "200": { "description": "删除后的平台状态", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PromptView" } } } },
-          "400": { "$ref": "#/components/responses/BadRequest" },
-          "403": { "$ref": "#/components/responses/Forbidden" }
+          "200": {
+            "description": "删除后的平台状态",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromptView"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
         }
       }
     },
     "/api/classes": {
       "get": {
-        "tags": ["classes"],
+        "tags": [
+          "classes"
+        ],
         "summary": "我参与的班级",
-        "security": [{ "cookieAuth": [] }, { "bearerAuth": [] }],
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
         "responses": {
-          "200": { "description": "班级列表（仅所属教师可见邀请码）", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Classroom" } } } } },
-          "401": { "$ref": "#/components/responses/Unauthorized" }
+          "200": {
+            "description": "班级列表（仅所属教师可见邀请码）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Classroom"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
         }
       },
       "post": {
-        "tags": ["classes"],
+        "tags": [
+          "classes"
+        ],
         "summary": "创建班级",
         "description": "只有教师可以创建班级；管理员不能被隐式授权。",
-        "security": [{ "cookieAuth": [] }, { "bearerAuth": [] }],
-        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ClassInput" } } } },
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClassInput"
+              }
+            }
+          }
+        },
         "responses": {
-          "201": { "description": "创建成功", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Classroom" } } } },
-          "400": { "$ref": "#/components/responses/BadRequest" },
-          "403": { "$ref": "#/components/responses/Forbidden" }
+          "201": {
+            "description": "创建成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Classroom"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
         }
       }
     },
     "/api/classes/join": {
       "post": {
-        "tags": ["classes"],
+        "tags": [
+          "classes"
+        ],
         "summary": "邀请码入班",
-        "security": [{ "cookieAuth": [] }, { "bearerAuth": [] }],
-        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["code"], "properties": { "code": { "type": "string" } } } } } },
-        "responses": {
-          "200": { "description": "已加入班级", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Classroom" } } } },
-          "400": { "$ref": "#/components/responses/BadRequest" },
-          "404": { "$ref": "#/components/responses/NotFound" },
-          "409": { "description": "已在该班级或班级已归档", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
-        }
-      }
-    },
-    "/api/classes/{id}": {
-      "get": {
-        "tags": ["classes"],
-        "summary": "班级详情",
-        "security": [{ "cookieAuth": [] }, { "bearerAuth": [] }],
-        "parameters": [{ "$ref": "#/components/parameters/ClassId" }],
-        "responses": {
-          "200": { "description": "班级、成员与讲义", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ClassDetail" } } } },
-          "401": { "$ref": "#/components/responses/Unauthorized" },
-          "403": { "$ref": "#/components/responses/Forbidden" },
-          "404": { "$ref": "#/components/responses/NotFound" }
-        }
-      },
-      "patch": {
-        "tags": ["classes"],
-        "summary": "编辑班级",
-        "security": [{ "cookieAuth": [] }, { "bearerAuth": [] }],
-        "parameters": [{ "$ref": "#/components/parameters/ClassId" }],
-        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ClassInput" } } } },
-        "responses": {
-          "200": { "description": "更新后的班级", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Classroom" } } } },
-          "400": { "$ref": "#/components/responses/BadRequest" },
-          "403": { "$ref": "#/components/responses/Forbidden" },
-          "409": { "description": "班级已归档", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
-        }
-      }
-    },
-    "/api/classes/{id}/archive": {
-      "post": {
-        "tags": ["classes"],
-        "summary": "归档或恢复班级",
-        "security": [{ "cookieAuth": [] }, { "bearerAuth": [] }],
-        "parameters": [{ "$ref": "#/components/parameters/ClassId" }],
-        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["archived"], "properties": { "archived": { "type": "boolean" } } } } } },
-        "responses": {
-          "200": { "description": "更新后的班级", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Classroom" } } } },
-          "403": { "$ref": "#/components/responses/Forbidden" },
-          "404": { "$ref": "#/components/responses/NotFound" }
-        }
-      }
-    },
-    "/api/classes/{id}/members/{userID}": {
-      "delete": {
-        "tags": ["classes"],
-        "summary": "移除成员或学生退班",
-        "security": [{ "cookieAuth": [] }, { "bearerAuth": [] }],
-        "parameters": [{ "$ref": "#/components/parameters/ClassId" }, { "name": "userID", "in": "path", "required": true, "schema": { "type": "string" } }],
-        "responses": {
-          "200": { "description": "成员关系已删除", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Ok" } } } },
-          "403": { "$ref": "#/components/responses/Forbidden" },
-          "404": { "$ref": "#/components/responses/NotFound" },
-          "409": { "description": "班级已归档", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
-        }
-      }
-    },
-    "/api/classes/{id}/handouts": {
-      "post": {
-        "tags": ["handouts"],
-        "summary": "上传讲义",
-        "description": "支持 PDF、DOC、DOCX、PPT、PPTX、TXT、MD，单文件不超过 50 MiB；后端校验扩展名与文件签名。上传成功即排队索引。",
-        "security": [{ "cookieAuth": [] }, { "bearerAuth": [] }],
-        "parameters": [{ "$ref": "#/components/parameters/ClassId" }],
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
-            "multipart/form-data": {
+            "application/json": {
               "schema": {
                 "type": "object",
-                "required": ["file"],
+                "required": [
+                  "code"
+                ],
                 "properties": {
-                  "file": { "type": "string", "format": "binary" },
-                  "title": { "type": "string", "maxLength": 120 }
+                  "code": {
+                    "type": "string"
+                  }
                 }
               }
             }
           }
         },
         "responses": {
-          "201": { "description": "上传成功", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Handout" } } } },
-          "400": { "$ref": "#/components/responses/BadRequest" },
-          "403": { "$ref": "#/components/responses/Forbidden" },
-          "409": { "description": "班级已归档", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
-          "413": { "description": "文件过大", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+          "200": {
+            "description": "已加入班级",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Classroom"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "description": "已在该班级或班级已归档",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/classes/{id}": {
+      "get": {
+        "tags": [
+          "classes"
+        ],
+        "summary": "班级详情",
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ClassId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "班级、成员与讲义",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClassDetail"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "classes"
+        ],
+        "summary": "编辑班级",
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ClassId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClassInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "更新后的班级",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Classroom"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "description": "班级已归档",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/classes/{id}/archive": {
+      "post": {
+        "tags": [
+          "classes"
+        ],
+        "summary": "归档或恢复班级",
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ClassId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "archived"
+                ],
+                "properties": {
+                  "archived": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "更新后的班级",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Classroom"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/classes/{id}/members/{userID}": {
+      "delete": {
+        "tags": [
+          "classes"
+        ],
+        "summary": "移除成员或学生退班",
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ClassId"
+          },
+          {
+            "name": "userID",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成员关系已删除",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Ok"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "description": "班级已归档",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/classes/{id}/handouts": {
+      "post": {
+        "tags": [
+          "handouts"
+        ],
+        "summary": "上传讲义",
+        "description": "支持 PDF、DOC、DOCX、PPT、PPTX、TXT、MD，单文件不超过 50 MiB；后端校验扩展名与文件签名。上传成功即排队索引。",
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ClassId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "file"
+                ],
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary"
+                  },
+                  "title": {
+                    "type": "string",
+                    "maxLength": 120
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "上传成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Handout"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "description": "班级已归档",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "文件过大",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
         }
       }
     },
     "/api/handouts/{id}/file": {
       "get": {
-        "tags": ["handouts"],
+        "tags": [
+          "handouts"
+        ],
         "summary": "下载或预览讲义",
         "description": "每次请求都重新校验班级成员身份；PDF 支持 `?preview=1` 内联预览，TXT/MD 始终作为附件下载。",
-        "security": [{ "cookieAuth": [] }, { "bearerAuth": [] }],
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
         "parameters": [
-          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } },
-          { "name": "preview", "in": "query", "required": false, "schema": { "type": "integer", "enum": [1] } }
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "preview",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "enum": [
+                1
+              ]
+            }
+          }
         ],
         "responses": {
-          "200": { "description": "文件内容", "content": { "application/octet-stream": { "schema": { "type": "string", "format": "binary" } } } },
-          "403": { "$ref": "#/components/responses/Forbidden" },
-          "404": { "$ref": "#/components/responses/NotFound" }
+          "200": {
+            "description": "文件内容",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
         }
       }
     },
     "/api/handouts/{id}": {
       "delete": {
-        "tags": ["handouts"],
+        "tags": [
+          "handouts"
+        ],
         "summary": "删除讲义",
         "description": "删除后旧引用立即失效（来源接口返回 404）。",
-        "security": [{ "cookieAuth": [] }, { "bearerAuth": [] }],
-        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
-          "200": { "description": "已删除", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Ok" } } } },
-          "403": { "$ref": "#/components/responses/Forbidden" },
-          "404": { "$ref": "#/components/responses/NotFound" },
-          "409": { "description": "班级已归档", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+          "200": {
+            "description": "已删除",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Ok"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "description": "班级已归档",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
         }
       }
     },
     "/api/classes/{id}/knowledge/documents": {
       "get": {
-        "tags": ["knowledge"],
+        "tags": [
+          "knowledge"
+        ],
         "summary": "讲义索引状态",
-        "security": [{ "cookieAuth": [] }, { "bearerAuth": [] }],
-        "parameters": [{ "$ref": "#/components/parameters/ClassId" }],
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ClassId"
+          }
+        ],
         "responses": {
           "200": {
             "description": "每份讲义的索引状态",
@@ -397,175 +1203,590 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "properties": { "documents": { "type": "array", "items": { "$ref": "#/components/schemas/KnowledgeDocument" } } }
+                  "properties": {
+                    "documents": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/KnowledgeDocument"
+                      }
+                    }
+                  }
                 }
               }
             }
           },
-          "403": { "$ref": "#/components/responses/Forbidden" }
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
         }
       }
     },
     "/api/classes/{id}/knowledge/documents/{handoutID}/index": {
       "post": {
-        "tags": ["knowledge"],
+        "tags": [
+          "knowledge"
+        ],
         "summary": "建立、重试或重建索引",
         "description": "不带请求体时使用默认窗口策略（约 800 字窗口、约 10% 重叠）。",
-        "security": [{ "cookieAuth": [] }, { "bearerAuth": [] }],
-        "parameters": [{ "$ref": "#/components/parameters/ClassId" }, { "name": "handoutID", "in": "path", "required": true, "schema": { "type": "string" } }],
-        "requestBody": { "required": false, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/IndexInput" } } } },
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ClassId"
+          },
+          {
+            "name": "handoutID",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IndexInput"
+              }
+            }
+          }
+        },
         "responses": {
-          "202": { "description": "已排队", "content": { "application/json": { "schema": { "type": "object", "properties": { "queued": { "type": "boolean" } } } } } },
-          "400": { "$ref": "#/components/responses/BadRequest" },
-          "403": { "$ref": "#/components/responses/Forbidden" },
-          "409": { "description": "班级已归档", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
-          "503": { "$ref": "#/components/responses/Unavailable" }
+          "202": {
+            "description": "已排队",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "queued": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "description": "班级已归档",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
         }
       }
     },
     "/api/classes/{id}/knowledge/search": {
       "post": {
-        "tags": ["knowledge"],
+        "tags": [
+          "knowledge"
+        ],
         "summary": "班级内检索原文",
         "description": "三种模式：`keyword` 只查 MySQL ngram 全文索引、不调用嵌入；`vector` 走 Qdrant 余弦（阈值 0.35）；`hybrid` 两路各取前 50 条后按 RRF（k=60）融合。只返回原文片段与出处，不生成内容。",
-        "security": [{ "cookieAuth": [] }, { "bearerAuth": [] }],
-        "parameters": [{ "$ref": "#/components/parameters/ClassId" }],
-        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SearchInput" } } } },
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ClassId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SearchInput"
+              }
+            }
+          }
+        },
         "responses": {
-          "200": { "description": "检索结果", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SearchResult" } } } },
-          "400": { "$ref": "#/components/responses/BadRequest" },
-          "403": { "$ref": "#/components/responses/Forbidden" },
-          "503": { "$ref": "#/components/responses/Unavailable" }
+          "200": {
+            "description": "检索结果",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
         }
       }
     },
     "/api/classes/{id}/knowledge/ask": {
       "post": {
-        "tags": ["knowledge"],
+        "tags": [
+          "knowledge"
+        ],
         "summary": "单次问答（含出处）",
-        "description": "先检索本班混合结果前 4 条；无命中时返回固定文案且不调用对话模型。回答一次性返回，不使用流式。",
-        "security": [{ "cookieAuth": [] }, { "bearerAuth": [] }],
-        "parameters": [{ "$ref": "#/components/parameters/ClassId" }],
-        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AskInput" } } } },
+        "description": "先检索本班混合结果前 4 条；无命中时返回固定文案且不调用对话模型。回答一次性返回，不使用流式。\n\n可通过 `app` 选择内置应用：`qa`（默认，回答问题）与 `quiz`（出题练习）；两者共用同一检索与出处管线，只有任务模板不同。",
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ClassId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AskInput"
+              }
+            }
+          }
+        },
         "responses": {
-          "200": { "description": "回答与出处", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Answer" } } } },
-          "400": { "$ref": "#/components/responses/BadRequest" },
-          "403": { "$ref": "#/components/responses/Forbidden" },
-          "503": { "$ref": "#/components/responses/Unavailable" }
+          "200": {
+            "description": "回答与出处",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Answer"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
         }
       }
     },
     "/api/classes/{id}/knowledge/chunks/{chunkID}/source": {
       "get": {
-        "tags": ["knowledge"],
+        "tags": [
+          "knowledge"
+        ],
         "summary": "读取引用原文",
-        "security": [{ "cookieAuth": [] }, { "bearerAuth": [] }],
-        "parameters": [{ "$ref": "#/components/parameters/ClassId" }, { "name": "chunkID", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ClassId"
+          },
+          {
+            "name": "chunkID",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
-          "200": { "description": "切片正文与定位", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Citation" } } } },
-          "403": { "$ref": "#/components/responses/Forbidden" },
-          "404": { "$ref": "#/components/responses/NotFound" },
-          "409": { "description": "切片所属代次已不是当前已发布代次", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+          "200": {
+            "description": "切片正文与定位",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Citation"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "description": "切片所属代次已不是当前已发布代次",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
         }
       }
     },
     "/api/classes/{id}/prompts": {
       "get": {
-        "tags": ["prompts"],
+        "tags": [
+          "prompts"
+        ],
         "summary": "读取本班提示词与技能",
         "description": "所有成员可读；`can_edit` 表示当前用户能否修改（仅所属教师且班级未归档）。",
-        "security": [{ "cookieAuth": [] }, { "bearerAuth": [] }],
-        "parameters": [{ "$ref": "#/components/parameters/ClassId" }],
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ClassId"
+          }
+        ],
         "responses": {
-          "200": { "description": "本班生效状态", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PromptView" } } } },
-          "403": { "$ref": "#/components/responses/Forbidden" },
-          "404": { "$ref": "#/components/responses/NotFound" }
+          "200": {
+            "description": "本班生效状态",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromptView"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
         }
       },
       "put": {
-        "tags": ["prompts"],
+        "tags": [
+          "prompts"
+        ],
         "summary": "保存班级提示词",
-        "security": [{ "cookieAuth": [] }, { "bearerAuth": [] }],
-        "parameters": [{ "$ref": "#/components/parameters/ClassId" }],
-        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PromptInput" } } } },
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ClassId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PromptInput"
+              }
+            }
+          }
+        },
         "responses": {
-          "200": { "description": "保存后的状态", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PromptView" } } } },
-          "400": { "$ref": "#/components/responses/BadRequest" },
-          "403": { "$ref": "#/components/responses/Forbidden" }
+          "200": {
+            "description": "保存后的状态",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromptView"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
         }
       },
       "delete": {
-        "tags": ["prompts"],
+        "tags": [
+          "prompts"
+        ],
         "summary": "移除班级提示词覆盖",
-        "security": [{ "cookieAuth": [] }, { "bearerAuth": [] }],
-        "parameters": [{ "$ref": "#/components/parameters/ClassId" }],
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ClassId"
+          }
+        ],
         "responses": {
-          "200": { "description": "回到平台默认后的状态", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PromptView" } } } },
-          "403": { "$ref": "#/components/responses/Forbidden" }
+          "200": {
+            "description": "回到平台默认后的状态",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromptView"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
         }
       }
     },
     "/api/classes/{id}/skills/{name}": {
       "put": {
-        "tags": ["prompts"],
+        "tags": [
+          "prompts"
+        ],
         "summary": "覆盖或停用某个技能",
         "description": "`body` 省略表示沿用平台同名技能正文，只调整启用状态（`enabled=false` 即本班停用）。新建技能必须提供正文。",
-        "security": [{ "cookieAuth": [] }, { "bearerAuth": [] }],
-        "parameters": [{ "$ref": "#/components/parameters/ClassId" }, { "$ref": "#/components/parameters/SkillName" }],
-        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SkillInput" } } } },
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ClassId"
+          },
+          {
+            "$ref": "#/components/parameters/SkillName"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SkillInput"
+              }
+            }
+          }
+        },
         "responses": {
-          "200": { "description": "保存后的状态", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PromptView" } } } },
-          "400": { "$ref": "#/components/responses/BadRequest" },
-          "403": { "$ref": "#/components/responses/Forbidden" }
+          "200": {
+            "description": "保存后的状态",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromptView"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
         }
       },
       "delete": {
-        "tags": ["prompts"],
+        "tags": [
+          "prompts"
+        ],
         "summary": "移除班级技能覆盖",
-        "security": [{ "cookieAuth": [] }, { "bearerAuth": [] }],
-        "parameters": [{ "$ref": "#/components/parameters/ClassId" }, { "$ref": "#/components/parameters/SkillName" }],
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ClassId"
+          },
+          {
+            "$ref": "#/components/parameters/SkillName"
+          }
+        ],
         "responses": {
-          "200": { "description": "回到平台状态", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PromptView" } } } },
-          "403": { "$ref": "#/components/responses/Forbidden" }
+          "200": {
+            "description": "回到平台状态",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromptView"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
         }
       }
     },
     "/api/classes/{id}/sessions": {
       "get": {
-        "tags": ["sessions"],
+        "tags": [
+          "sessions"
+        ],
         "summary": "本班会话列表",
-        "security": [{ "cookieAuth": [] }, { "bearerAuth": [] }],
-        "parameters": [{ "$ref": "#/components/parameters/ClassId" }],
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ClassId"
+          }
+        ],
         "responses": {
           "200": {
             "description": "按最近活动排序的会话",
             "content": {
               "application/json": {
-                "schema": { "type": "object", "properties": { "sessions": { "type": "array", "items": { "$ref": "#/components/schemas/ChatSession" } } } }
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "sessions": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ChatSession"
+                      }
+                    }
+                  }
+                }
               }
             }
           },
-          "403": { "$ref": "#/components/responses/Forbidden" }
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
         }
       },
       "post": {
-        "tags": ["sessions"],
+        "tags": [
+          "sessions"
+        ],
         "summary": "新建会话",
-        "security": [{ "cookieAuth": [] }, { "bearerAuth": [] }],
-        "parameters": [{ "$ref": "#/components/parameters/ClassId" }],
-        "requestBody": { "required": false, "content": { "application/json": { "schema": { "type": "object", "properties": { "title": { "type": "string", "maxLength": 60 } } } } } },
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ClassId"
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "title": {
+                    "type": "string",
+                    "maxLength": 60
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
-          "201": { "description": "新会话", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ChatSession" } } } },
-          "403": { "$ref": "#/components/responses/Forbidden" }
+          "201": {
+            "description": "新会话",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatSession"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
         }
       }
     },
     "/api/classes/{id}/sessions/{sid}": {
       "get": {
-        "tags": ["sessions"],
+        "tags": [
+          "sessions"
+        ],
         "summary": "会话详情与消息",
-        "security": [{ "cookieAuth": [] }, { "bearerAuth": [] }],
-        "parameters": [{ "$ref": "#/components/parameters/ClassId" }, { "$ref": "#/components/parameters/SessionId" }],
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ClassId"
+          },
+          {
+            "$ref": "#/components/parameters/SessionId"
+          }
+        ],
         "responses": {
           "200": {
             "description": "会话与按顺序号升序的消息（最多 50 条）",
@@ -574,149 +1795,475 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "session": { "$ref": "#/components/schemas/ChatSession" },
-                    "messages": { "type": "array", "items": { "$ref": "#/components/schemas/ChatMessage" } }
+                    "session": {
+                      "$ref": "#/components/schemas/ChatSession"
+                    },
+                    "messages": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ChatMessage"
+                      }
+                    }
                   }
                 }
               }
             }
           },
-          "403": { "$ref": "#/components/responses/Forbidden" },
-          "404": { "$ref": "#/components/responses/NotFound" }
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
         }
       }
     },
     "/api/classes/{id}/sessions/{sid}/messages": {
       "post": {
-        "tags": ["sessions"],
+        "tags": [
+          "sessions"
+        ],
         "summary": "发送消息并流式接收回答",
         "description": "先落库用户消息，再做本班混合检索：没有命中时只返回固定文案且不调用对话模型；有命中时才把生效提示词、技能、材料与最近若干轮交给模型并逐块下发。客户端断开时服务端立即停止索取内容，已收到部分按 `interrupted` 保存。\n\n事件：`delta`（增量文本）、`citations`（出处列表）、`done`（结束状态 `complete` / `no_matches` / `no_ready_documents` / `interrupted`）、`error`（失败说明）。",
-        "security": [{ "cookieAuth": [] }, { "bearerAuth": [] }],
-        "parameters": [{ "$ref": "#/components/parameters/ClassId" }, { "$ref": "#/components/parameters/SessionId" }],
-        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["content"], "properties": { "content": { "type": "string", "minLength": 1, "maxLength": 1000 } } } } } },
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ClassId"
+          },
+          {
+            "$ref": "#/components/parameters/SessionId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "content"
+                ],
+                "properties": {
+                  "content": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 1000
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "事件流",
             "headers": {
-              "Cache-Control": { "schema": { "type": "string" }, "description": "固定为 no-store" },
-              "X-Accel-Buffering": { "schema": { "type": "string" }, "description": "固定为 no，提示中间代理不要缓冲" }
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "固定为 no-store"
+              },
+              "X-Accel-Buffering": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "固定为 no，提示中间代理不要缓冲"
+              }
             },
             "content": {
               "text/event-stream": {
-                "schema": { "type": "string" },
+                "schema": {
+                  "type": "string"
+                },
                 "examples": {
-                  "delta": { "value": "event: delta\ndata: {\"text\":\"考核由平时作业\"}\n\n" },
-                  "tool_call_running": { "value": "event: tool_call\ndata: {\"tool\":\"formula_hint\",\"server\":\"campus-tools\",\"status\":\"running\"}\n\n" },
-                  "tool_call_ok": { "value": "event: tool_call\ndata: {\"tool\":\"formula_hint\",\"server\":\"campus-tools\",\"status\":\"ok\"}\n\n" },
-                  "citations": { "value": "event: citations\ndata: {\"message_id\":\"...\",\"citations\":[{\"index\":1,\"ordinal\":1}]}\n\n" },
-                  "done": { "value": "event: done\ndata: {\"status\":\"complete\",\"message_id\":\"...\",\"tools\":[{\"tool\":\"formula_hint\",\"server\":\"campus-tools\",\"status\":\"ok\"}]}\n\n" }
+                  "delta": {
+                    "value": "event: delta\ndata: {\"text\":\"考核由平时作业\"}\n\n"
+                  },
+                  "tool_call_running": {
+                    "value": "event: tool_call\ndata: {\"tool\":\"formula_hint\",\"server\":\"campus-tools\",\"status\":\"running\"}\n\n"
+                  },
+                  "tool_call_ok": {
+                    "value": "event: tool_call\ndata: {\"tool\":\"formula_hint\",\"server\":\"campus-tools\",\"status\":\"ok\"}\n\n"
+                  },
+                  "citations": {
+                    "value": "event: citations\ndata: {\"message_id\":\"...\",\"citations\":[{\"index\":1,\"ordinal\":1}]}\n\n"
+                  },
+                  "done": {
+                    "value": "event: done\ndata: {\"status\":\"complete\",\"message_id\":\"...\",\"tools\":[{\"tool\":\"formula_hint\",\"server\":\"campus-tools\",\"status\":\"ok\"}]}\n\n"
+                  }
                 }
               }
             }
           },
-          "400": { "$ref": "#/components/responses/BadRequest" },
-          "403": { "$ref": "#/components/responses/Forbidden" },
-          "404": { "$ref": "#/components/responses/NotFound" },
-          "503": { "$ref": "#/components/responses/Unavailable" }
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
         }
       }
     },
     "/api/tool-servers": {
       "get": {
-        "tags": ["tools"],
+        "tags": [
+          "tools"
+        ],
         "summary": "列出自己登记的工具服务",
         "description": "只返回当前教师自己登记的服务器。令牌不回传，只有 `has_token` 标记。学生调用返回 403。",
-        "security": [{ "cookieAuth": [] }, { "bearerAuth": [] }],
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
         "responses": {
-          "200": { "description": "服务器列表（含发现的工具）", "content": { "application/json": { "schema": { "type": "object", "properties": { "servers": { "type": "array", "items": { "$ref": "#/components/schemas/ToolServer" } } } } } } },
-          "401": { "$ref": "#/components/responses/Unauthorized" },
-          "403": { "$ref": "#/components/responses/Forbidden" }
+          "200": {
+            "description": "服务器列表（含发现的工具）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "servers": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ToolServer"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
         }
       },
       "post": {
-        "tags": ["tools"],
+        "tags": [
+          "tools"
+        ],
         "summary": "登记工具服务",
         "description": "登记名称与 Base URL，可选提供访问令牌（只写不回显）。名称在同一教师内唯一，允许字母、数字与连字符。",
-        "security": [{ "cookieAuth": [] }, { "bearerAuth": [] }],
-        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ToolServerInput" } } } },
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ToolServerInput"
+              }
+            }
+          }
+        },
         "responses": {
-          "201": { "description": "登记成功，初始为未连接", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ToolServer" } } } },
-          "400": { "$ref": "#/components/responses/BadRequest" },
-          "403": { "$ref": "#/components/responses/Forbidden" },
-          "409": { "description": "名称已被使用", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+          "201": {
+            "description": "登记成功，初始为未连接",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ToolServer"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "description": "名称已被使用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
         }
       }
     },
     "/api/tool-servers/{id}": {
       "patch": {
-        "tags": ["tools"],
+        "tags": [
+          "tools"
+        ],
         "summary": "修改工具服务",
         "description": "改名或改 Base URL，可选更新令牌。访问他人的服务器返回 404。",
-        "security": [{ "cookieAuth": [] }, { "bearerAuth": [] }],
-        "parameters": [{ "$ref": "#/components/parameters/ToolServerId" }],
-        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ToolServerInput" } } } },
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ToolServerId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ToolServerInput"
+              }
+            }
+          }
+        },
         "responses": {
-          "200": { "description": "修改后的服务器", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ToolServer" } } } },
-          "400": { "$ref": "#/components/responses/BadRequest" },
-          "403": { "$ref": "#/components/responses/Forbidden" },
-          "404": { "$ref": "#/components/responses/NotFound" },
-          "409": { "description": "名称已被使用", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+          "200": {
+            "description": "修改后的服务器",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ToolServer"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "description": "名称已被使用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
         }
       },
       "delete": {
-        "tags": ["tools"],
+        "tags": [
+          "tools"
+        ],
         "summary": "删除工具服务",
         "description": "删除后其工具清单与连接状态一并消失；历史调用记录保留。",
-        "security": [{ "cookieAuth": [] }, { "bearerAuth": [] }],
-        "parameters": [{ "$ref": "#/components/parameters/ToolServerId" }],
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ToolServerId"
+          }
+        ],
         "responses": {
-          "200": { "description": "已删除", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Ok" } } } },
-          "403": { "$ref": "#/components/responses/Forbidden" },
-          "404": { "$ref": "#/components/responses/NotFound" }
+          "200": {
+            "description": "已删除",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Ok"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
         }
       }
     },
     "/api/tool-servers/{id}/connect": {
       "post": {
-        "tags": ["tools"],
+        "tags": [
+          "tools"
+        ],
         "summary": "连接并发现工具",
         "description": "握手（initialize）+ 工具发现（tools/list）两步都成功才整体替换工具清单并标记已连接；任一步失败停在未连接、清空清单，并返回可读原因。连续连接两次不会让清单翻倍。",
-        "security": [{ "cookieAuth": [] }, { "bearerAuth": [] }],
-        "parameters": [{ "$ref": "#/components/parameters/ToolServerId" }],
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ToolServerId"
+          }
+        ],
         "responses": {
-          "200": { "description": "连接成功，返回发现的工具", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ToolServer" } } } },
-          "400": { "$ref": "#/components/responses/BadRequest" },
-          "403": { "$ref": "#/components/responses/Forbidden" },
-          "404": { "$ref": "#/components/responses/NotFound" },
-          "502": { "description": "握手或工具发现失败（服务不可达、令牌被拒、清单格式不合法）", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+          "200": {
+            "description": "连接成功，返回发现的工具",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ToolServer"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "502": {
+            "description": "握手或工具发现失败（服务不可达、令牌被拒、清单格式不合法）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
         }
       }
     },
     "/api/tool-servers/{id}/disconnect": {
       "post": {
-        "tags": ["tools"],
+        "tags": [
+          "tools"
+        ],
         "summary": "断开工具服务",
         "description": "清空工具清单并标记未连接；此后引用其工具的调用被记为「被拒」。重复断开幂等。",
-        "security": [{ "cookieAuth": [] }, { "bearerAuth": [] }],
-        "parameters": [{ "$ref": "#/components/parameters/ToolServerId" }],
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ToolServerId"
+          }
+        ],
         "responses": {
-          "200": { "description": "断开后的服务器状态", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ToolServer" } } } },
-          "403": { "$ref": "#/components/responses/Forbidden" },
-          "404": { "$ref": "#/components/responses/NotFound" }
+          "200": {
+            "description": "断开后的服务器状态",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ToolServer"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
         }
       }
     },
     "/api/tool-calls": {
       "get": {
-        "tags": ["tools"],
+        "tags": [
+          "tools"
+        ],
         "summary": "调用记录",
         "description": "只返回当前教师范围内的记录；默认 `limit=50`、上限 200；支持按结果与会话筛选。记录只增不改。",
-        "security": [{ "cookieAuth": [] }, { "bearerAuth": [] }],
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
         "parameters": [
-          { "name": "limit", "in": "query", "required": false, "schema": { "type": "integer", "minimum": 1, "maximum": 200, "default": 50 } },
-          { "name": "outcome", "in": "query", "required": false, "schema": { "type": "string", "enum": ["success", "rejected", "error"] } },
-          { "name": "session_id", "in": "query", "required": false, "schema": { "type": "string" } },
-          { "name": "server_id", "in": "query", "required": false, "schema": { "type": "string" } }
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50
+            }
+          },
+          {
+            "name": "outcome",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "success",
+                "rejected",
+                "error"
+              ]
+            }
+          },
+          {
+            "name": "session_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "server_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
         ],
         "responses": {
           "200": {
@@ -726,326 +2273,1213 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "calls": { "type": "array", "items": { "$ref": "#/components/schemas/ToolCall" } },
-                    "has_more": { "type": "boolean" },
-                    "limit": { "type": "integer" }
+                    "calls": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ToolCall"
+                      }
+                    },
+                    "has_more": {
+                      "type": "boolean"
+                    },
+                    "limit": {
+                      "type": "integer"
+                    }
                   }
                 }
               }
             }
           },
-          "400": { "$ref": "#/components/responses/BadRequest" },
-          "403": { "$ref": "#/components/responses/Forbidden" }
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/classes/{id}/apps": {
+      "get": {
+        "tags": [
+          "app"
+        ],
+        "summary": "内置 AI 应用清单",
+        "description": "返回内置应用（知识库问答、出题练习）；同一检索与出处管线，任务模板不同。成员可读。",
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ClassId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "应用清单",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "apps": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "id",
+                          "name",
+                          "description"
+                        ],
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "enum": [
+                              "qa",
+                              "quiz"
+                            ]
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "description": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/classes/{id}/skills/import": {
+      "post": {
+        "tags": [
+          "prompts"
+        ],
+        "summary": "上传技能文件",
+        "description": "multipart 上传 `.md`（可选 front-matter：name / enabled / tools）或 `.json`（{name, body, enabled, tools}），解析后按与表单保存相同的规则校验并入库；文件不得超过 32 KB。",
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ClassId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "file"
+                ],
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "导入成功，返回技能名与最新状态",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "skill": {
+                      "type": "string"
+                    },
+                    "view": {
+                      "$ref": "#/components/schemas/PromptView"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "413": {
+            "description": "文件超过 32 KB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
         }
       }
     }
   },
   "components": {
     "securitySchemes": {
-      "cookieAuth": { "type": "apiKey", "in": "cookie", "name": "teaching_session", "description": "浏览器登录后由服务端下发；带 Cookie 的写请求必须来自本站来源。" },
-      "bearerAuth": { "type": "http", "scheme": "bearer", "description": "`POST /api/auth/token` 换取的不透明令牌；只带令牌的请求不做同源校验。" }
+      "cookieAuth": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "teaching_session",
+        "description": "浏览器登录后由服务端下发；带 Cookie 的写请求必须来自本站来源。"
+      },
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "`POST /api/auth/token` 换取的不透明令牌；只带令牌的请求不做同源校验。"
+      }
     },
     "parameters": {
-      "ClassId": { "name": "id", "in": "path", "required": true, "schema": { "type": "string" }, "description": "班级标识" },
-      "SessionId": { "name": "sid", "in": "path", "required": true, "schema": { "type": "string" }, "description": "会话标识" },
-      "SkillName": { "name": "name", "in": "path", "required": true, "schema": { "type": "string", "maxLength": 60 }, "description": "技能名，例如「解题引导」" },
-      "ToolServerId": { "name": "id", "in": "path", "required": true, "schema": { "type": "string" }, "description": "工具服务标识" }
+      "ClassId": {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        },
+        "description": "班级标识"
+      },
+      "SessionId": {
+        "name": "sid",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        },
+        "description": "会话标识"
+      },
+      "SkillName": {
+        "name": "name",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "maxLength": 60
+        },
+        "description": "技能名，例如「解题引导」"
+      },
+      "ToolServerId": {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        },
+        "description": "工具服务标识"
+      }
     },
     "responses": {
-      "BadRequest": { "description": "输入无效", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
-      "Unauthorized": { "description": "未登录、会话过期或令牌无效", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
-      "Forbidden": { "description": "无权访问，或写请求来源不是本站", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
-      "NotFound": { "description": "资源不存在（跨班对象一律按不存在处理）", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
-      "RateLimited": { "description": "登录或注册频率超限，请 10 分钟后重试", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
-      "Unavailable": { "description": "依赖不可用（课程网关未配置、嵌入或向量检索不可用、数据库未就绪）", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+      "BadRequest": {
+        "description": "输入无效",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Unauthorized": {
+        "description": "未登录、会话过期或令牌无效",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Forbidden": {
+        "description": "无权访问，或写请求来源不是本站",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "NotFound": {
+        "description": "资源不存在（跨班对象一律按不存在处理）",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "RateLimited": {
+        "description": "登录或注册频率超限，请 10 分钟后重试",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Unavailable": {
+        "description": "依赖不可用（课程网关未配置、嵌入或向量检索不可用、数据库未就绪）",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      }
     },
     "schemas": {
-      "Error": { "type": "object", "required": ["error"], "properties": { "error": { "type": "string", "description": "可读的中文错误说明" } } },
-      "Ok": { "type": "object", "properties": { "ok": { "type": "boolean" } } },
-      "Login": { "type": "object", "required": ["username", "password"], "properties": { "username": { "type": "string", "minLength": 3, "maxLength": 32 }, "password": { "type": "string", "minLength": 8, "maxLength": 72 } } },
+      "Error": {
+        "type": "object",
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "type": "string",
+            "description": "可读的中文错误说明"
+          }
+        }
+      },
+      "Ok": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          }
+        }
+      },
+      "Login": {
+        "type": "object",
+        "required": [
+          "username",
+          "password"
+        ],
+        "properties": {
+          "username": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 32
+          },
+          "password": {
+            "type": "string",
+            "minLength": 8,
+            "maxLength": 72
+          }
+        }
+      },
       "Credentials": {
         "type": "object",
-        "required": ["username", "name", "password"],
+        "required": [
+          "username",
+          "name",
+          "password"
+        ],
         "properties": {
-          "username": { "type": "string", "pattern": "^[a-z0-9_]{3,32}$", "description": "统一小写" },
-          "name": { "type": "string", "minLength": 1, "maxLength": 40 },
-          "password": { "type": "string", "minLength": 8, "maxLength": 72 }
+          "username": {
+            "type": "string",
+            "pattern": "^[a-z0-9_]{3,32}$",
+            "description": "统一小写"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 40
+          },
+          "password": {
+            "type": "string",
+            "minLength": 8,
+            "maxLength": 72
+          }
         }
       },
       "User": {
         "type": "object",
-        "required": ["id", "username", "name", "role"],
+        "required": [
+          "id",
+          "username",
+          "name",
+          "role"
+        ],
         "properties": {
-          "id": { "type": "string" },
-          "username": { "type": "string" },
-          "name": { "type": "string" },
-          "role": { "type": "string", "enum": ["admin", "teacher", "student"] }
+          "id": {
+            "type": "string"
+          },
+          "username": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "admin",
+              "teacher",
+              "student"
+            ]
+          }
         }
       },
-      "ClassInput": { "type": "object", "required": ["name"], "properties": { "name": { "type": "string", "maxLength": 80 }, "description": { "type": "string", "maxLength": 1000 } } },
+      "ClassInput": {
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 80
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 1000
+          }
+        }
+      },
       "Classroom": {
         "type": "object",
-        "required": ["id", "name", "owner_id", "archived"],
+        "required": [
+          "id",
+          "name",
+          "owner_id",
+          "archived"
+        ],
         "properties": {
-          "id": { "type": "string" },
-          "name": { "type": "string" },
-          "description": { "type": "string" },
-          "owner_id": { "type": "string" },
-          "teacher": { "type": "string" },
-          "invite_code": { "type": "string", "description": "仅所属教师可见，其他角色为空串" },
-          "archived": { "type": "boolean" },
-          "created_at": { "type": "string", "format": "date-time" },
-          "member_count": { "type": "integer" },
-          "handout_count": { "type": "integer" }
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "owner_id": {
+            "type": "string"
+          },
+          "teacher": {
+            "type": "string"
+          },
+          "invite_code": {
+            "type": "string",
+            "description": "仅所属教师可见，其他角色为空串"
+          },
+          "archived": {
+            "type": "boolean"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "member_count": {
+            "type": "integer"
+          },
+          "handout_count": {
+            "type": "integer"
+          }
         }
       },
       "ClassDetail": {
         "type": "object",
         "properties": {
-          "classroom": { "$ref": "#/components/schemas/Classroom" },
-          "members": { "type": "array", "items": { "$ref": "#/components/schemas/User" } },
-          "handouts": { "type": "array", "items": { "$ref": "#/components/schemas/Handout" } }
+          "classroom": {
+            "$ref": "#/components/schemas/Classroom"
+          },
+          "members": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/User"
+            }
+          },
+          "handouts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Handout"
+            }
+          }
         }
       },
       "Handout": {
         "type": "object",
         "properties": {
-          "id": { "type": "string" },
-          "title": { "type": "string" },
-          "filename": { "type": "string" },
-          "size": { "type": "integer" },
-          "mime": { "type": "string" },
-          "created_at": { "type": "string", "format": "date-time" }
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "filename": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer"
+          },
+          "mime": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
         }
       },
       "KnowledgeDocument": {
         "type": "object",
         "properties": {
-          "handout_id": { "type": "string" },
-          "title": { "type": "string" },
-          "filename": { "type": "string" },
-          "status": { "type": "string", "enum": ["not_indexed", "queued", "extracting", "embedding", "ready", "failed", "unsupported", "paused"] },
-          "error_code": { "type": "string" },
-          "has_ready_index": { "type": "boolean" },
-          "strategy": { "type": "string", "enum": ["window", "separator", "heading"] },
-          "requested_strategy": { "type": "string", "enum": ["window", "separator", "heading"] },
-          "chunk_note": { "type": "string" },
-          "updated_at": { "type": "string", "format": "date-time" }
+          "handout_id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "filename": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "not_indexed",
+              "queued",
+              "extracting",
+              "embedding",
+              "ready",
+              "failed",
+              "unsupported",
+              "paused"
+            ]
+          },
+          "error_code": {
+            "type": "string"
+          },
+          "has_ready_index": {
+            "type": "boolean"
+          },
+          "strategy": {
+            "type": "string",
+            "enum": [
+              "window",
+              "separator",
+              "heading"
+            ]
+          },
+          "requested_strategy": {
+            "type": "string",
+            "enum": [
+              "window",
+              "separator",
+              "heading"
+            ]
+          },
+          "chunk_note": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
         }
       },
       "IndexInput": {
         "type": "object",
         "properties": {
-          "strategy": { "type": "string", "enum": ["window", "separator", "heading"] },
-          "separator": { "type": "string", "enum": ["blank", "newline", "period"] },
-          "size": { "type": "integer", "minimum": 100, "maximum": 4000 },
-          "overlap": { "type": "integer", "minimum": 0 }
+          "strategy": {
+            "type": "string",
+            "enum": [
+              "window",
+              "separator",
+              "heading"
+            ]
+          },
+          "separator": {
+            "type": "string",
+            "enum": [
+              "blank",
+              "newline",
+              "period"
+            ]
+          },
+          "size": {
+            "type": "integer",
+            "minimum": 100,
+            "maximum": 4000
+          },
+          "overlap": {
+            "type": "integer",
+            "minimum": 0
+          }
         }
       },
       "SearchInput": {
         "type": "object",
-        "required": ["query"],
+        "required": [
+          "query"
+        ],
         "properties": {
-          "query": { "type": "string", "minLength": 1, "maxLength": 1000 },
-          "mode": { "type": "string", "enum": ["keyword", "vector", "hybrid"], "default": "hybrid" },
-          "top_k": { "type": "integer", "minimum": 1, "maximum": 20, "default": 5 },
-          "handout_ids": { "type": "array", "maxItems": 100, "items": { "type": "string" } }
+          "query": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "keyword",
+              "vector",
+              "hybrid"
+            ],
+            "default": "hybrid"
+          },
+          "top_k": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 20,
+            "default": 5
+          },
+          "handout_ids": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+              "type": "string"
+            }
+          }
         }
       },
       "SearchResult": {
         "type": "object",
-        "required": ["status", "mode", "hits"],
+        "required": [
+          "status",
+          "mode",
+          "hits"
+        ],
         "properties": {
-          "status": { "type": "string", "enum": ["ok", "no_ready_documents", "no_matches"] },
-          "mode": { "type": "string", "enum": ["keyword", "vector", "hybrid"] },
-          "hits": { "type": "array", "items": { "$ref": "#/components/schemas/SearchHit" } },
-          "message": { "type": "string" },
-          "ready_documents": { "type": "integer" },
-          "total_documents": { "type": "integer" },
-          "partial": { "type": "boolean" }
+          "status": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "no_ready_documents",
+              "no_matches"
+            ]
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "keyword",
+              "vector",
+              "hybrid"
+            ]
+          },
+          "hits": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SearchHit"
+            }
+          },
+          "message": {
+            "type": "string"
+          },
+          "ready_documents": {
+            "type": "integer"
+          },
+          "total_documents": {
+            "type": "integer"
+          },
+          "partial": {
+            "type": "boolean"
+          }
         }
       },
       "Locator": {
         "type": "object",
         "properties": {
-          "type": { "type": "string", "enum": ["page", "slide", "line", "paragraph"] },
-          "start": { "type": "integer", "minimum": 1 },
-          "end": { "type": "integer", "minimum": 1 },
-          "label": { "type": "string" },
-          "converted": { "type": "boolean", "description": "DOC/PPT 经格式转换提取时为 true" }
+          "type": {
+            "type": "string",
+            "enum": [
+              "page",
+              "slide",
+              "line",
+              "paragraph"
+            ]
+          },
+          "start": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "end": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "label": {
+            "type": "string"
+          },
+          "converted": {
+            "type": "boolean",
+            "description": "DOC/PPT 经格式转换提取时为 true"
+          }
         }
       },
       "SearchHit": {
         "type": "object",
-        "required": ["chunk_id", "handout_id", "title", "content", "ordinal", "char_start", "char_end", "locator"],
+        "required": [
+          "chunk_id",
+          "handout_id",
+          "title",
+          "content",
+          "ordinal",
+          "char_start",
+          "char_end",
+          "locator"
+        ],
         "properties": {
-          "chunk_id": { "type": "string" },
-          "handout_id": { "type": "string" },
-          "title": { "type": "string" },
-          "filename": { "type": "string" },
-          "content": { "type": "string", "description": "切片正文，取自 MySQL" },
-          "content_version": { "type": "string" },
-          "locator": { "$ref": "#/components/schemas/Locator" },
-          "ordinal": { "type": "integer", "minimum": 1 },
-          "char_start": { "type": "integer", "minimum": 0 },
-          "char_end": { "type": "integer", "minimum": 0 },
-          "similarity": { "type": "number", "description": "仅 vector 模式返回，不是事实正确概率" }
+          "chunk_id": {
+            "type": "string"
+          },
+          "handout_id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "filename": {
+            "type": "string"
+          },
+          "content": {
+            "type": "string",
+            "description": "切片正文，取自 MySQL"
+          },
+          "content_version": {
+            "type": "string"
+          },
+          "locator": {
+            "$ref": "#/components/schemas/Locator"
+          },
+          "ordinal": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "char_start": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "char_end": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "similarity": {
+            "type": "number",
+            "description": "仅 vector 模式返回，不是事实正确概率"
+          }
         }
       },
       "Citation": {
         "type": "object",
-        "required": ["index", "chunk_id", "handout_id", "ordinal", "char_start", "char_end", "content"],
+        "required": [
+          "index",
+          "chunk_id",
+          "handout_id",
+          "ordinal",
+          "char_start",
+          "char_end",
+          "content"
+        ],
         "properties": {
-          "index": { "type": "integer", "minimum": 1, "description": "与回答中的 [n] 对应" },
-          "chunk_id": { "type": "string" },
-          "handout_id": { "type": "string" },
-          "title": { "type": "string" },
-          "filename": { "type": "string" },
-          "ordinal": { "type": "integer" },
-          "char_start": { "type": "integer" },
-          "char_end": { "type": "integer" },
-          "content": { "type": "string" },
-          "content_version": { "type": "string" },
-          "locator": { "$ref": "#/components/schemas/Locator" },
-          "download_url": { "type": "string" }
+          "index": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "与回答中的 [n] 对应"
+          },
+          "chunk_id": {
+            "type": "string"
+          },
+          "handout_id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "filename": {
+            "type": "string"
+          },
+          "ordinal": {
+            "type": "integer"
+          },
+          "char_start": {
+            "type": "integer"
+          },
+          "char_end": {
+            "type": "integer"
+          },
+          "content": {
+            "type": "string"
+          },
+          "content_version": {
+            "type": "string"
+          },
+          "locator": {
+            "$ref": "#/components/schemas/Locator"
+          },
+          "download_url": {
+            "type": "string"
+          }
         }
       },
       "AskInput": {
         "type": "object",
-        "required": ["query"],
+        "required": [
+          "query"
+        ],
         "properties": {
-          "query": { "type": "string", "minLength": 1, "maxLength": 1000 },
+          "query": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          },
           "history": {
             "type": "array",
             "maxItems": 6,
             "description": "此前轮次；只接受 user 与 assistant 角色，system 消息会被丢弃",
-            "items": { "type": "object", "required": ["role", "content"], "properties": { "role": { "type": "string", "enum": ["user", "assistant"] }, "content": { "type": "string" } } }
+            "items": {
+              "type": "object",
+              "required": [
+                "role",
+                "content"
+              ],
+              "properties": {
+                "role": {
+                  "type": "string",
+                  "enum": [
+                    "user",
+                    "assistant"
+                  ]
+                },
+                "content": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "app": {
+            "type": "string",
+            "enum": [
+              "qa",
+              "quiz"
+            ],
+            "default": "qa",
+            "description": "内置应用：qa 回答问题、quiz 出练习题；默认 qa"
           }
         }
       },
       "Answer": {
         "type": "object",
-        "required": ["status", "answer", "citations"],
+        "required": [
+          "status",
+          "answer",
+          "citations"
+        ],
         "properties": {
-          "status": { "type": "string", "enum": ["ok", "no_ready_documents", "no_matches"] },
-          "mode": { "type": "string", "enum": ["hybrid"] },
-          "answer": { "type": "string" },
-          "citations": { "type": "array", "items": { "$ref": "#/components/schemas/Citation" } },
-          "ready_documents": { "type": "integer" },
-          "total_documents": { "type": "integer" },
-          "partial": { "type": "boolean" }
+          "status": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "no_ready_documents",
+              "no_matches"
+            ]
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "hybrid"
+            ]
+          },
+          "answer": {
+            "type": "string"
+          },
+          "citations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Citation"
+            }
+          },
+          "ready_documents": {
+            "type": "integer"
+          },
+          "total_documents": {
+            "type": "integer"
+          },
+          "partial": {
+            "type": "boolean"
+          }
         }
       },
-      "PromptInput": { "type": "object", "required": ["body"], "properties": { "body": { "type": "string", "minLength": 1, "maxLength": 2000 } } },
+      "PromptInput": {
+        "type": "object",
+        "required": [
+          "body"
+        ],
+        "properties": {
+          "body": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
+          }
+        }
+      },
       "SkillInput": {
         "type": "object",
         "properties": {
-          "body": { "type": "string", "maxLength": 2000, "description": "省略表示沿用平台同名技能正文" },
-          "enabled": { "type": "boolean", "default": true },
+          "body": {
+            "type": "string",
+            "maxLength": 2000,
+            "description": "省略表示沿用平台同名技能正文"
+          },
+          "enabled": {
+            "type": "boolean",
+            "default": true
+          },
           "tools": {
             "type": "array",
             "maxItems": 8,
             "description": "技能允许模型使用的工具：`knowledge_search` 为内置知识库检索，或 `工具名@服务器名`（例如 formula_hint@campus-tools）。服务器须属于当前教师、已连接，且工具在其发现清单内；平台技能只允许内置检索。省略表示沿用既有工具项。",
-            "items": { "type": "string" }
+            "items": {
+              "type": "string"
+            }
           }
         }
       },
       "SkillState": {
         "type": "object",
-        "required": ["name", "body", "enabled", "scope", "tools"],
+        "required": [
+          "name",
+          "body",
+          "enabled",
+          "scope",
+          "tools"
+        ],
         "properties": {
-          "name": { "type": "string" },
-          "body": { "type": "string" },
-          "enabled": { "type": "boolean" },
-          "scope": { "type": "string", "enum": ["platform", "class"] },
-          "tools": { "type": "array", "items": { "type": "string" } }
+          "name": {
+            "type": "string"
+          },
+          "body": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "platform",
+              "class"
+            ]
+          },
+          "tools": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
         }
       },
       "PromptView": {
         "type": "object",
-        "required": ["prompt_body", "prompt_source", "skills", "can_edit"],
+        "required": [
+          "prompt_body",
+          "prompt_source",
+          "skills",
+          "can_edit"
+        ],
         "properties": {
-          "prompt_body": { "type": "string" },
-          "prompt_source": { "type": "string", "enum": ["class", "platform", "none"] },
-          "skills": { "type": "array", "items": { "$ref": "#/components/schemas/SkillState" } },
-          "can_edit": { "type": "boolean" },
-          "archived": { "type": "boolean" }
+          "prompt_body": {
+            "type": "string"
+          },
+          "prompt_source": {
+            "type": "string",
+            "enum": [
+              "class",
+              "platform",
+              "none"
+            ]
+          },
+          "skills": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SkillState"
+            }
+          },
+          "can_edit": {
+            "type": "boolean"
+          },
+          "archived": {
+            "type": "boolean"
+          }
         }
       },
       "DiscoveredTool": {
         "type": "object",
-        "required": ["name", "description", "input_schema"],
+        "required": [
+          "name",
+          "description",
+          "input_schema"
+        ],
         "properties": {
-          "name": { "type": "string", "description": "工具名：小写字母开头，只含小写字母、数字与下划线" },
-          "description": { "type": "string", "description": "工具的适用条件与边界" },
-          "input_schema": { "type": "object", "description": "工具输入结构（JSON Schema 子集）" }
+          "name": {
+            "type": "string",
+            "description": "工具名：小写字母开头，只含小写字母、数字与下划线"
+          },
+          "description": {
+            "type": "string",
+            "description": "工具的适用条件与边界"
+          },
+          "input_schema": {
+            "type": "object",
+            "description": "工具输入结构（JSON Schema 子集）"
+          }
         }
       },
       "ToolServer": {
         "type": "object",
-        "required": ["id", "name", "base_url", "connected", "has_token", "tools"],
+        "required": [
+          "id",
+          "name",
+          "base_url",
+          "connected",
+          "has_token",
+          "tools"
+        ],
         "properties": {
-          "id": { "type": "string" },
-          "name": { "type": "string" },
-          "base_url": { "type": "string" },
-          "connected": { "type": "boolean", "description": "握手与工具发现是否都成功" },
-          "has_token": { "type": "boolean", "description": "是否已配置访问令牌；令牌本身永不回传" },
-          "last_error": { "type": "string", "description": "最近一次连接失败的可读原因" },
-          "connected_at": { "type": "string", "format": "date-time" },
-          "tools": { "type": "array", "items": { "$ref": "#/components/schemas/DiscoveredTool" } }
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "base_url": {
+            "type": "string"
+          },
+          "connected": {
+            "type": "boolean",
+            "description": "握手与工具发现是否都成功"
+          },
+          "has_token": {
+            "type": "boolean",
+            "description": "是否已配置访问令牌；令牌本身永不回传"
+          },
+          "last_error": {
+            "type": "string",
+            "description": "最近一次连接失败的可读原因"
+          },
+          "connected_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "tools": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DiscoveredTool"
+            }
+          }
         }
       },
       "ToolServerInput": {
         "type": "object",
-        "required": ["name", "base_url"],
+        "required": [
+          "name",
+          "base_url"
+        ],
         "properties": {
-          "name": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9-]{0,63}$", "description": "同一教师内唯一，允许字母、数字与连字符" },
-          "base_url": { "type": "string", "pattern": "^https?://", "description": "例如 http://mcp-demo:8090（Compose 内网地址）" },
-          "auth_token": { "type": "string", "description": "只写不回显；省略时使用服务端环境变量 MCP_AUTH_TOKEN" }
+          "name": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9-]{0,63}$",
+            "description": "同一教师内唯一，允许字母、数字与连字符"
+          },
+          "base_url": {
+            "type": "string",
+            "pattern": "^https?://",
+            "description": "例如 http://mcp-demo:8090（Compose 内网地址）"
+          },
+          "auth_token": {
+            "type": "string",
+            "description": "只写不回显；省略时使用服务端环境变量 MCP_AUTH_TOKEN"
+          }
         }
       },
       "ToolCall": {
         "type": "object",
-        "required": ["id", "server_name", "tool", "outcome", "turn", "created_at"],
+        "required": [
+          "id",
+          "server_name",
+          "tool",
+          "outcome",
+          "turn",
+          "created_at"
+        ],
         "properties": {
-          "id": { "type": "string" },
-          "server_id": { "type": "string" },
-          "server_name": { "type": "string", "description": "调用开始时的服务器名快照" },
-          "tool": { "type": "string" },
-          "outcome": { "type": "string", "enum": ["success", "rejected", "error"] },
-          "detail": { "type": "string", "description": "被拒或出错的原因摘要" },
-          "class_id": { "type": "string" },
-          "session_id": { "type": "string" },
-          "turn": { "type": "integer", "minimum": 1, "description": "第几次模型请求（1 起）" },
-          "trigger_user_id": { "type": "string" },
-          "trigger_user": { "type": "string", "description": "提问者姓名" },
-          "created_at": { "type": "string", "format": "date-time" }
+          "id": {
+            "type": "string"
+          },
+          "server_id": {
+            "type": "string"
+          },
+          "server_name": {
+            "type": "string",
+            "description": "调用开始时的服务器名快照"
+          },
+          "tool": {
+            "type": "string"
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "success",
+              "rejected",
+              "error"
+            ]
+          },
+          "detail": {
+            "type": "string",
+            "description": "被拒或出错的原因摘要"
+          },
+          "class_id": {
+            "type": "string"
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "turn": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "第几次模型请求（1 起）"
+          },
+          "trigger_user_id": {
+            "type": "string"
+          },
+          "trigger_user": {
+            "type": "string",
+            "description": "提问者姓名"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
         }
       },
-      "ChatSession": {        "type": "object",
-        "required": ["id", "class_id", "user_id", "title", "message_count", "mine"],
+      "ChatSession": {
+        "type": "object",
+        "required": [
+          "id",
+          "class_id",
+          "user_id",
+          "title",
+          "message_count",
+          "mine"
+        ],
         "properties": {
-          "id": { "type": "string" },
-          "class_id": { "type": "string" },
-          "user_id": { "type": "string" },
-          "title": { "type": "string" },
-          "message_count": { "type": "integer" },
-          "mine": { "type": "boolean" },
-          "created_at": { "type": "string", "format": "date-time" },
-          "last_message_at": { "type": "string", "format": "date-time" }
+          "id": {
+            "type": "string"
+          },
+          "class_id": {
+            "type": "string"
+          },
+          "user_id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "message_count": {
+            "type": "integer"
+          },
+          "mine": {
+            "type": "boolean"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "last_message_at": {
+            "type": "string",
+            "format": "date-time"
+          }
         }
       },
       "ChatMessage": {
         "type": "object",
-        "required": ["id", "seq", "role", "status", "content", "citations"],
+        "required": [
+          "id",
+          "seq",
+          "role",
+          "status",
+          "content",
+          "citations"
+        ],
         "properties": {
-          "id": { "type": "string" },
-          "seq": { "type": "integer", "minimum": 1 },
-          "role": { "type": "string", "enum": ["user", "assistant"] },
-          "status": { "type": "string", "enum": ["complete", "interrupted", "failed"] },
-          "content": { "type": "string" },
-          "citations": { "type": "array", "items": { "$ref": "#/components/schemas/Citation" } },
-          "created_at": { "type": "string", "format": "date-time" }
+          "id": {
+            "type": "string"
+          },
+          "seq": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "user",
+              "assistant"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "complete",
+              "interrupted",
+              "failed"
+            ]
+          },
+          "content": {
+            "type": "string"
+          },
+          "citations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Citation"
+            }
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
         }
       }
     }

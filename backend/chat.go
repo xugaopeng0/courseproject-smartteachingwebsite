@@ -371,8 +371,10 @@ func (a *App) sendChatMessage(w http.ResponseWriter, r *http.Request, u *User) e
 		return nil
 	}
 
+	// 提示词模板支持变量，会话与单次问答使用同一套渲染规则。
+	promptBody = renderTemplate(promptBody, a.promptVariables(c.ID, content, skills))
 	messages := buildAnswerMessages(buildSystemPrompt(promptBody, skills), content, evidence.Rows, normalizeHistory(history))
-	candidates, err := a.candidateTools(r.Context(), skills)
+	candidates, err := a.candidateTools(r.Context(), c.ID, skills)
 	if err != nil {
 		return err
 	}

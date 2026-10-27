@@ -131,3 +131,16 @@
 会话回答的流式事件新增 `tool_call`（`running` → `ok`/`rejected`/`error`，先于正文推送），`done` 事件带
 `tools` 数组（名称、服务器、状态）。调用记录 `GET /api/tool-calls` 默认 `limit=50`、上限 200，
 可按 `outcome`、`session_id`、`server_id` 过滤；记录只增不改，只返回自己范围。
+
+## 内置 AI 应用、模板变量与技能上传（第 6 课补充）
+
+内置应用用同一套「检索 → 材料 → 出处」管线，只换任务模板：
+
+- `GET /api/classes/{id}/apps` → `{apps:[{id,name,description}]}`，内置 `qa`（知识库问答）与 `quiz`（出题练习）。
+- `POST /api/classes/{id}/knowledge/ask` 的请求体增加 `app`（默认 `qa`，另一取值 `quiz`）。`quiz` 会在系统提示词末尾追加
+  「出 3 道由易到难的练习题、逐题给参考答案、标注材料编号」的任务段；未知应用返回 400。
+- 班级/平台提示词支持变量：`{{question}}`（本次提问）、`{{class_name}}`、`{{skill_names}}`、`{{date}}`；
+  不认识的占位符原样保留。会话与单次问答使用同一套渲染规则。
+- `POST /api/classes/{id}/skills/import`（multipart，字段 `file`）：上传 `.md`（可选 front-matter：`name` / `enabled` /
+  `tools`，工具用逗号分隔）或 `.json`（`{name, body, enabled, tools}`），上限 32 KB；解析后按与表单保存相同的规则校验
+  （名称、正文长度、工具归属与连接状态），成功返回 201 与最新状态。

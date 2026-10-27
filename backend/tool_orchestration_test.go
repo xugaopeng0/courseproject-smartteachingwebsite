@@ -92,7 +92,7 @@ func (th *toolHarness) orchestration(t *testing.T, sessionID string) (orchestrat
 	if err != nil {
 		t.Fatal(err)
 	}
-	candidates, err := th.app.candidateTools(th.server.ctx, skills)
+	candidates, err := th.app.candidateTools(th.server.ctx, th.server.f.classID, skills)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -280,7 +280,7 @@ func TestCandidateToolsFilteringAndCap(t *testing.T) {
 	th := newToolHarness(t, true)
 	refs := []string{"knowledge_search", "formula_hint@campus-tools", "unit_convert@campus-tools", "nope@campus-tools", "formula_hint@disconnected"}
 	skills := []promptRow{{Name: "s", Enabled: true, Tools: refs}}
-	candidates, err := th.app.candidateTools(th.server.ctx, skills)
+	candidates, err := th.app.candidateTools(th.server.ctx, th.server.f.classID, skills)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -375,6 +375,11 @@ function App() {
   >([]);
   const [knowledgeBusy, setKnowledgeBusy] = useState(false);
   const [knowledgeError, setKnowledgeError] = useState("");
+  // 内置 AI 应用：知识库问答 / 出题练习（同一检索管线，不同任务模板）
+  const [knowledgeApp, setKnowledgeApp] = useState("qa");
+  const [knowledgeApps, setKnowledgeApps] = useState<
+    { id: string; name: string; description: string }[]
+  >([{ id: "qa", name: "知识库问答", description: "" }]);
   // 解题助手：会话、流式回答与提示词管理
   const [chatSessions, setChatSessions] = useState<ChatSession[]>([]);
   const [chatSession, setChatSession] = useState<ChatSession | null>(null);
@@ -514,6 +519,27 @@ function App() {
     void loadToolCalls("");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, detail, revision]);
+  // 班级打开后加载内置应用清单（知识库 / 出题练习）。
+  useEffect(() => {
+    if (!detail) return;
+    let cancelled = false;
+    api<{ apps: { id: string; name: string; description: string }[] }>(
+      `/classes/${detail.classroom.id}/apps`,
+    )
+      .then((payload) => {
+        if (cancelled || payload.apps.length === 0) return;
+        setKnowledgeApps(payload.apps);
+        setKnowledgeApp((current) =>
+          payload.apps.some((app) => app.id === current) ? current : payload.apps[0].id,
+        );
+      })
+      .catch(() => {
+        // 加载失败时保留默认应用，不影响提问。
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [detail]);
   const open = (d: Dialog) => {
     setFormError("");
     setSelectedFile(null);
@@ -672,7 +698,7 @@ function App() {
       const result = await api<KnowledgeAnswer>(
         `/classes/${detail.classroom.id}/knowledge/ask`,
         // 只把最近几轮附在切片之后，便于连续追问；服务端仍以最新一句重新检索。
-        json("POST", { query, history: knowledgeHistory.slice(-6) }),
+        json("POST", { query, app: knowledgeApp, history: knowledgeHistory.slice(-6) }),
       );
       if (request === knowledgeRequest.current) {
         setKnowledgeAnswer(result);
@@ -734,6 +760,28 @@ function App() {
     setPromptError("");
     try {
       applyPromptView(await action());
+    } catch (error) {
+      setPromptError((error as Error).message);
+    } finally {
+      setPromptBusy(false);
+    }
+  };
+  // 上传技能文件：.md（front-matter）或 .json，交给服务端解析与校验。
+  const uploadSkillFile = async (file: File) => {
+    if (!detail) return;
+    setPromptBusy(true);
+    setPromptError("");
+    const body = new FormData();
+    body.append("file", file);
+    try {
+      const response = await fetch(
+        `/api/classes/${detail.classroom.id}/skills/import`,
+        { method: "POST", body, credentials: "same-origin" },
+      );
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new APIError(payload.error || "上传失败", response.status);
+      setPrompts(payload.view as PromptView);
+      notify(`已导入技能「${payload.skill}」`);
     } catch (error) {
       setPromptError((error as Error).message);
     } finally {
@@ -1155,6 +1203,17 @@ function App() {
           >
             生成回答
           </button>
+          <select
+            aria-label="选择应用"
+            value={knowledgeApp}
+            onChange={(event) => setKnowledgeApp(event.target.value)}
+          >
+            {knowledgeApps.map((app) => (
+              <option key={app.id} value={app.id}>
+                {app.name}
+              </option>
+            ))}
+          </select>
         </form>
         <div className="knowledge-modes" role="group" aria-label="检索模式">
           {(
@@ -1806,6 +1865,12 @@ function App() {
                                   aria-label="班级提示词"
                                 />
                               </label>
+                              <p className="prompt-hint">
+                                模板支持变量：<code>{"{{question}}"}</code>{" "}
+                                <code>{"{{class_name}}"}</code>{" "}
+                                <code>{"{{skill_names}}"}</code> <code>{"{{date}}"}</code>
+                                ；未识别的占位符原样保留。
+                              </p>
                               <div className="prompt-actions">
                                 <button
                                   className="primary"
@@ -1908,8 +1973,7 @@ function App() {
                                 <input
                                   placeholder="技能名，例如：逐步提示"
                                   value={newSkill.name}
-                                  maxLength={60}
-                                  onChange={(event) =>
+                                  maxLength={60}                                  onChange={(event) =>
                                     setNewSkill({ ...newSkill, name: event.target.value })
                                   }
                                   aria-label="新技能名称"
@@ -1947,6 +2011,20 @@ function App() {
                                   <Plus size={16} /> 添加技能
                                 </button>
                               </div>
+                              <label className="skill-upload">
+                                <span>上传技能文件（.md 可带 front-matter：name / enabled / tools；或 .json）</span>
+                                <input
+                                  type="file"
+                                  accept=".md,.markdown,.json"
+                                  aria-label="上传技能文件"
+                                  disabled={promptBusy || detail.classroom.archived}
+                                  onChange={(event) => {
+                                    const file = event.target.files?.[0];
+                                    if (file) void uploadSkillFile(file);
+                                    event.target.value = "";
+                                  }}
+                                />
+                              </label>
                             </section>
                           )}
                           {user?.role === "teacher" && (

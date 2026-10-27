@@ -89,7 +89,12 @@ type toolCandidate struct {
 
 // candidateTools 计算候选集：只取自生效且启用的技能 → 去掉内置检索 → 只保留已连接服务器上
 // 存在于发现清单中的工具 → 去重 → 按上限裁剪（顺序稳定，先按技能顺序）。
-func (a *App) candidateTools(ctx context.Context, skills []promptRow) ([]toolCandidate, error) {
+func (a *App) candidateTools(ctx context.Context, classID string, skills []promptRow) ([]toolCandidate, error) {
+	// 服务器名只在所有者内唯一：先锁定本班所有者，否则同名的他人服务器会被跨教师串用。
+	var ownerID string
+	if err := a.db.QueryRowContext(ctx, `SELECT owner_id FROM classrooms WHERE id=?`, classID).Scan(&ownerID); err != nil {
+		return nil, err
+	}
 	seen := map[string]bool{}
 	out := []toolCandidate{}
 	for _, skill := range skills {
@@ -104,7 +109,7 @@ func (a *App) candidateTools(ctx context.Context, skills []promptRow) ([]toolCan
 			}
 			var server toolServerRow
 			err = a.db.QueryRowContext(ctx, `SELECT id,owner_id,name,base_url,token_cipher,connected,last_error,connected_at
-				FROM tool_servers WHERE name=? AND connected=1 ORDER BY created_at LIMIT 1`, serverName).
+				FROM tool_servers WHERE owner_id=? AND name=? AND connected=1 ORDER BY created_at LIMIT 1`, ownerID, serverName).
 				Scan(&server.ID, &server.OwnerID, &server.Name, &server.BaseURL, &server.TokenCipher, &server.Connected, &server.LastError, &server.ConnectedAt)
 			if err != nil {
 				// 未连接或已删除：不进候选集（调用会被记为被拒）。

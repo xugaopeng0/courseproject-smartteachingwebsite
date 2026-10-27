@@ -460,3 +460,16 @@ HTTP 级验收：容器里没有 curl、busybox 的 `wget` 又不支持自定义
 4. **记录只看自己范围**：同伴打开调用记录，只看到自己范围内的记录。
 
 尚未完成，不计入通过：无。
+
+### 第 6 课补充三项（2026-10-27）
+
+按验收反馈补齐三处：内置第三应用「出题练习」、提示词模板变量、技能文件上传。
+
+| 检查 | 结果 |
+| --- | --- |
+| 应用清单与未知应用 | `GET /apps` 返回 qa/quiz；`app=quiz` 的任务段出现在系统提示词；`app=nope` 400（`TestAppsListAndQuizTemplate`） |
+| 模板变量 | `{{question}}`/`{{class_name}}`/`{{skill_names}}`/`{{date}}` 替换、未知占位符保留（`TestRenderTemplateVariables`） |
+| 技能文件上传 | `.md`（front-matter 解析名称与工具）、`.json`、非法类型 400、front-matter 未闭合 400、工具未连接 400（`TestSkillImport`） |
+| 接口测试 | 17/17 通过（新增 apps 与 skills/import 两个用例） |
+| 界面 | 10/10 通过：应用选择器含出题练习、出题练习能返回回答、提示词变量提示、技能文件上传后出现在列表 |
+| 真实模型 | 出题练习实测返回 3 道题与参考答案，`finish_reason=stop`，`usage.total_tokens=3418` |

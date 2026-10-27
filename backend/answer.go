@@ -27,6 +27,7 @@ const (
 
 type answerInput struct {
 	Query   string        `json:"query"`
+	App     string        `json:"app"`
 	History []chatMessage `json:"history"`
 }
 
@@ -114,6 +115,13 @@ func (a *App) askKnowledge(w http.ResponseWriter, r *http.Request, u *User) erro
 		return err
 	}
 	input.Query = strings.TrimSpace(input.Query)
+	input.App = strings.TrimSpace(input.App)
+	if input.App == "" {
+		input.App = appQA
+	}
+	if _, ok := findApp(input.App); !ok {
+		return fail(400, "未知应用：可用应用为 qa（知识库问答）与 quiz（出题练习）")
+	}
 	if utf8.RuneCountInString(input.Query) < 1 || utf8.RuneCountInString(input.Query) > 1000 {
 		return fail(400, "提问须为 1–1000 字")
 	}
@@ -149,7 +157,17 @@ func (a *App) askKnowledge(w http.ResponseWriter, r *http.Request, u *User) erro
 	if err != nil {
 		return err
 	}
-	messages := buildAnswerMessages(buildSystemPrompt(promptBody, skills), input.Query, ordered, normalizeHistory(input.History))
+	// 提示词模板支持变量（{{question}} 等），第三个应用（出题练习）再追加任务段。
+	promptBody = renderTemplate(promptBody, a.promptVariables(classID, input.Query, skills))
+	taskPrompt, err := a.buildTaskPrompt(input.App, classID, input.Query, skills)
+	if err != nil {
+		return err
+	}
+	systemPrompt := buildSystemPrompt(promptBody, skills)
+	if taskPrompt != "" {
+		systemPrompt += "\n\n" + taskPrompt
+	}
+	messages := buildAnswerMessages(systemPrompt, input.Query, ordered, normalizeHistory(input.History))
 	promptLength := 0
 	for _, message := range messages {
 		promptLength += len([]rune(message.Content))

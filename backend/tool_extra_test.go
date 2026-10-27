@@ -114,3 +114,30 @@ func TestToolResultStaysOutOfSystemPrompt(t *testing.T) {
 		t.Fatalf("工具结果应作为 tool 消息回传：%+v", captured)
 	}
 }
+
+// 回归：服务器名只在所有者内唯一，候选集必须按班级所有者过滤，不能串用他人同名服务器。
+func TestCandidateToolsScopedToClassOwner(t *testing.T) {
+	th := newToolHarness(t, true)
+	// 另一个教师登记并连接同名服务器。
+	other := th.server.newUser(t, "teacher", false)
+	otherServerID := newID()
+	if _, err := th.app.db.ExecContext(th.server.ctx, `INSERT INTO tool_servers(id,owner_id,name,base_url,connected) VALUES(?,?,?,?,1)`,
+		otherServerID, other.user.ID, "campus-tools", th.mcp.server.URL); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := th.app.db.ExecContext(th.server.ctx, `INSERT INTO tool_server_tools(server_id,name,description,input_schema) VALUES(?,?,?,?)`,
+		otherServerID, "formula_hint", "他人说明", "{}"); err != nil {
+		t.Fatal(err)
+	}
+	skills := []promptRow{{Name: "s", Enabled: true, Tools: []string{"formula_hint@campus-tools"}}}
+	candidates, err := th.app.candidateTools(th.server.ctx, th.server.f.classID, skills)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(candidates) != 1 {
+		t.Fatalf("应只有一个候选：%+v", candidates)
+	}
+	if candidates[0].Server.OwnerID != th.server.user.ID {
+		t.Fatalf("候选必须属于本班教师，实际 owner=%s（本班教师 %s）", candidates[0].Server.OwnerID, th.server.user.ID)
+	}
+}

@@ -63,6 +63,8 @@ func (a *App) routes() []routeSpec {
 		{"DELETE", "/api/classes/{id}/prompts", true, a.deleteClassPrompt},
 		{"PUT", "/api/classes/{id}/skills/{name}", true, a.updateClassSkill},
 		{"DELETE", "/api/classes/{id}/skills/{name}", true, a.deleteClassSkill},
+		{"POST", "/api/classes/{id}/skills/import", true, a.importClassSkill},
+		{"GET", "/api/classes/{id}/apps", true, a.listApps},
 		{"POST", "/api/classes/{id}/sessions", true, a.createChatSession},
 		{"GET", "/api/classes/{id}/sessions", true, a.listChatSessions},
 		{"GET", "/api/classes/{id}/sessions/{sid}", true, a.chatSessionMessages},
