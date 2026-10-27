@@ -91,8 +91,13 @@ func main() {
 	chat := func(w http.ResponseWriter, r *http.Request) {
 		chatCalls.Add(1)
 		var body struct {
-			Model    string `json:"model"`
-			Stream   bool   `json:"stream"`
+			Model  string `json:"model"`
+			Stream bool   `json:"stream"`
+			Tools  []struct {
+				Function struct {
+					Name string `json:"name"`
+				} `json:"function"`
+			} `json:"tools"`
 			Messages []struct {
 				Role    string `json:"role"`
 				Content string `json:"content"`
@@ -104,7 +109,13 @@ func main() {
 		}
 		question := ""
 		excerpt := ""
+		toolResult := ""
+		hasToolResult := false
 		for _, message := range body.Messages {
+			if message.Role == "tool" {
+				toolResult = message.Content
+				hasToolResult = true
+			}
 			if message.Role == "user" {
 				question = message.Content
 				if index := strings.Index(question, "问题："); index >= 0 {
@@ -117,8 +128,42 @@ func main() {
 				}
 			}
 		}
+		// 工具调用：只有在声明了 formula_hint 且问题含「公式」、且还没有工具结果时才调用。
+		// 这样「无候选集」与「已有结果」两条路径都不会触发，行为可预期。
+		wantsTool := false
+		for _, item := range body.Tools {
+			if item.Function.Name == "formula_hint" {
+				wantsTool = true
+			}
+		}
+		if wantsTool && !hasToolResult && strings.Contains(question, "公式") {
+			if body.Stream {
+				writeToolCallSSE(w, body.Model, "formula_hint", `{"topic":"总评计算"}`)
+				return
+			}
+			writeJSON(w, map[string]any{
+				"object": "chat.completion",
+				"model":  body.Model,
+				"choices": []map[string]any{{
+					"index":         0,
+					"finish_reason": "tool_calls",
+					"message": map[string]any{
+						"role":    "assistant",
+						"content": "",
+						"tool_calls": []map[string]any{{
+							"id":       "call_stub_1",
+							"type":     "function",
+							"function": map[string]any{"name": "formula_hint", "arguments": `{"topic":"总评计算"}`},
+						}},
+					},
+				}},
+			})
+			return
+		}
 		answer := "替身回答：材料中没有足够依据。"
-		if excerpt != "" {
+		if hasToolResult && toolResult != "" {
+			answer = fmt.Sprintf("依据工具结果：%s 因此「%s」的答案以该结果为准。", firstLine(toolResult), truncate(question, 30))
+		} else if excerpt != "" {
 			// 确定性回答：复述第一条材料的开头并标注 [1]，用于验证引用与出处顺序。
 			answer = fmt.Sprintf("依据材料[1]：%s 因此「%s」的答案以该片段为准。", firstLine(excerpt), truncate(question, 30))
 		}
@@ -149,6 +194,35 @@ func main() {
 	if err := http.ListenAndServe(address, mux); err != nil {
 		log.Fatal(err)
 	}
+}
+
+// writeToolCallSSE 返回一次流式工具调用：与 OpenAI 的 delta.tool_calls 形状一致。
+func writeToolCallSSE(w http.ResponseWriter, model, name, arguments string) {
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(http.StatusOK)
+	payload, _ := json.Marshal(map[string]any{
+		"object": "chat.completion.chunk",
+		"model":  model,
+		"choices": []map[string]any{{
+			"index": 0,
+			"delta": map[string]any{"tool_calls": []map[string]any{{
+				"index":    0,
+				"id":       "call_stub_1",
+				"type":     "function",
+				"function": map[string]any{"name": name, "arguments": arguments},
+			}}},
+		}},
+	})
+	fmt.Fprintf(w, "data: %s\n\n", payload)
+	flusher.Flush()
+	fmt.Fprint(w, "data: [DONE]\n\n")
+	flusher.Flush()
 }
 
 func firstLine(text string) string {

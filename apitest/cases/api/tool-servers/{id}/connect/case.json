@@ -1,0 +1,5 @@
+{
+  "order": 30,
+  "path_params": { "id": "$tool_server_id" },
+  "requires": ["tool_server_id"]
+}

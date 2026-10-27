@@ -31,6 +31,7 @@ import {
   LoaderCircle,
   KeyRound,
   LockKeyhole,
+  Wrench,
 } from "lucide-react";
 import {
   api,
@@ -57,6 +58,15 @@ import {
   type PromptView,
   type ChatSession,
   type ChatMessage,
+  type ToolServer,
+  type ToolCallRecord,
+  type ToolEvent,
+  toolServers,
+  registerToolServer,
+  connectToolServer,
+  disconnectToolServer,
+  deleteToolServer,
+  toolCallRecords,
 } from "./api";
 import "./styles.css";
 
@@ -379,6 +389,16 @@ function App() {
   const [promptBusy, setPromptBusy] = useState(false);
   const [promptError, setPromptError] = useState("");
   const [newSkill, setNewSkill] = useState({ name: "", body: "" });
+  // 第 6 课：工具服务与调用记录（教师侧），以及会话中的工具步骤。
+  const [tools, setTools] = useState<ToolServer[]>([]);
+  const [toolForm, setToolForm] = useState({ name: "", base_url: "", auth_token: "" });
+  const [toolBusy, setToolBusy] = useState(false);
+  const [toolError, setToolError] = useState("");
+  const [toolCalls, setToolCalls] = useState<ToolCallRecord[]>([]);
+  const [toolOutcome, setToolOutcome] = useState("");
+  const [chatTools, setChatTools] = useState<ToolEvent[]>([]);
+  const [chatToolsByMessage, setChatToolsByMessage] = useState<Record<string, ToolEvent[]>>({});
+  const [skillToolsDraft, setSkillToolsDraft] = useState<Record<string, string>>({});
   const knowledgeRequest = useRef(0);
   const knowledgeDocumentsRequest = useRef(0);
   const revisionRef = useRef(0);
@@ -465,8 +485,7 @@ function App() {
   }, [user, route, revision]);
   useEffect(() => {
     if (tab !== "knowledge" || !detail) return;
-    const request = ++knowledgeDocumentsRequest.current;
-    let timer: ReturnType<typeof setTimeout> | undefined;
+    const request = ++knowledgeDocumentsRequest.current;    let timer: ReturnType<typeof setTimeout> | undefined;
     setKnowledgeError("");
     const load = () =>
       api<{ documents: KnowledgeDocument[] }>(
@@ -487,6 +506,13 @@ function App() {
       knowledgeDocumentsRequest.current++;
       if (timer) clearTimeout(timer);
     };
+  }, [tab, detail, revision]);
+  // 设置页打开时加载工具服务与调用记录（仅教师）。
+  useEffect(() => {
+    if (tab !== "settings" || !detail || !user || user.role !== "teacher") return;
+    void loadTools();
+    void loadToolCalls("");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, detail, revision]);
   const open = (d: Dialog) => {
     setFormError("");
@@ -714,6 +740,38 @@ function App() {
       setPromptBusy(false);
     }
   };
+  // 第 6 课：工具服务与调用记录。
+  const loadTools = async () => {
+    if (!user || user.role !== "teacher") return;
+    try {
+      setTools((await toolServers()).servers);
+      setToolError("");
+    } catch (error) {
+      setToolError((error as Error).message);
+    }
+  };
+  const loadToolCalls = async (outcome = toolOutcome) => {
+    if (!user || user.role !== "teacher") return;
+    try {
+      const query = outcome ? `outcome=${outcome}` : "";
+      setToolCalls((await toolCallRecords(query)).calls);
+    } catch (error) {
+      setToolError((error as Error).message);
+    }
+  };
+  const runToolAction = async (action: () => Promise<unknown>) => {
+    setToolBusy(true);
+    setToolError("");
+    try {
+      await action();
+      await loadTools();
+      await loadToolCalls();
+    } catch (error) {
+      setToolError((error as Error).message);
+    } finally {
+      setToolBusy(false);
+    }
+  };
 
   const loadSessions = async () => {
     if (!detail) return;
@@ -793,6 +851,7 @@ function App() {
     const controller = new AbortController();
     chatAbort.current = controller;
     let streamed = "";
+    setChatTools([]);
     try {
       await streamChatMessage(
         detail.classroom.id,
@@ -809,6 +868,16 @@ function App() {
               ),
             );
           },
+          onTool: (event) => {
+            // 同一次调用会有「调用中」与「结束」两条事件：按工具名合并成一条步骤。
+            setChatTools((list) => {
+              const index = list.findIndex((item) => item.tool === event.tool);
+              if (index < 0) return [...list, event];
+              const next = [...list];
+              next[index] = event;
+              return next;
+            });
+          },
           onCitations: (citations) => {
             setChatMessages((list) =>
               list.map((message) =>
@@ -816,11 +885,13 @@ function App() {
               ),
             );
           },
-          onDone: (status) => {
+          onDone: (status, messageId, usedTools) => {
             if (status === "no_matches" || status === "no_ready_documents")
               setChatNotice("资料中未找到相关内容");
             if (status === "interrupted")
               setChatNotice("回答中断，已保留收到的部分");
+            if (usedTools.length > 0 && messageId)
+              setChatToolsByMessage((map) => ({ ...map, [messageId]: usedTools }));
           },
           onError: (message) => setChatError(message),
         },
@@ -948,6 +1019,36 @@ function App() {
                         </li>
                       ))}
                     </ol>
+                  )}
+                  {(chatToolsByMessage[message.id] ??
+                    (message.id === "streaming" ? chatTools : [])
+                  ).length > 0 && (
+                    <ul className="tool-steps">
+                      {(chatToolsByMessage[message.id] ??
+                        (message.id === "streaming" ? chatTools : [])
+                      ).map((event, index) => (
+                        <li
+                          key={`${event.tool}-${index}`}
+                          className={`tool-step ${event.status}`}
+                        >
+                          <Wrench size={14} />
+                          <span>
+                            {event.tool}
+                            {event.server ? "@" + event.server : ""}
+                          </span>
+                          <em>
+                            {event.status === "running"
+                              ? "调用中"
+                              : event.status === "ok"
+                                ? "成功"
+                                : event.status === "rejected"
+                                  ? "被拒"
+                                  : "出错"}
+                          </em>
+                          {event.detail && <small>{event.detail}</small>}
+                        </li>
+                      ))}
+                    </ul>
                   )}
                 </article>
               ))}
@@ -1737,6 +1838,40 @@ function App() {
                                         {skill.enabled ? "启用中" : "已停用"}
                                       </small>
                                       <p>{skill.body}</p>
+                                      <div className="skill-tools">
+                                        <input
+                                          placeholder="工具：knowledge_search 或 formula_hint@campus-tools"
+                                          value={
+                                            skillToolsDraft[skill.name] ??
+                                            (skill.tools ?? []).join(" ")
+                                          }
+                                          onChange={(event) =>
+                                            setSkillToolsDraft({
+                                              ...skillToolsDraft,
+                                              [skill.name]: event.target.value,
+                                            })
+                                          }
+                                          aria-label={"技能工具 " + skill.name}
+                                        />
+                                        <button
+                                          className="text-button"
+                                          disabled={promptBusy || detail.classroom.archived}
+                                          onClick={() =>
+                                            runPromptAction(() =>
+                                              saveClassSkill(detail.classroom.id, skill.name, {
+                                                tools: (
+                                                  skillToolsDraft[skill.name] ??
+                                                  (skill.tools ?? []).join(" ")
+                                                )
+                                                  .split(/[\s,]+/)
+                                                  .filter(Boolean),
+                                              }),
+                                            )
+                                          }
+                                        >
+                                          保存工具
+                                        </button>
+                                      </div>
                                     </div>
                                     <div className="skill-actions">
                                       <button
@@ -1813,6 +1948,192 @@ function App() {
                                 </button>
                               </div>
                             </section>
+                          )}
+                          {user?.role === "teacher" && (
+                            <>
+                              <section className="prompt-editor tool-servers">
+                                <header>
+                                  <span>工具服务</span>
+                                  <small>登记并连接自建 MCP 工具服务；令牌只保存在服务端，不会回显。</small>
+                                </header>
+                                {toolError && <p className="inline-error">{toolError}</p>}
+                                <ul className="tool-server-list">
+                                  {tools.length === 0 && (
+                                    <li className="empty-hint">还没有登记工具服务。</li>
+                                  )}
+                                  {tools.map((server) => (
+                                    <li key={server.id}>
+                                      <div>
+                                        <strong>{server.name}</strong>
+                                        <small>
+                                          {server.connected ? "已连接" : "未连接"} ·{" "}
+                                          {server.tools.length} 个工具 ·{" "}
+                                          {server.has_token ? "已配置令牌" : "未配置令牌"}
+                                          {server.last_error ? ` · ${server.last_error}` : ""}
+                                        </small>
+                                        <p className="tool-url">{server.base_url}</p>
+                                        {server.tools.length > 0 && (
+                                          <p className="tool-names">
+                                            工具：
+                                            {server.tools
+                                              .map((item) => item.name)
+                                              .join("、")}
+                                          </p>
+                                        )}
+                                      </div>
+                                      <div className="skill-actions">
+                                        <button
+                                          className="text-button"
+                                          disabled={toolBusy}
+                                          onClick={() =>
+                                            runToolAction(() =>
+                                              server.connected
+                                                ? disconnectToolServer(server.id)
+                                                : connectToolServer(server.id),
+                                            )
+                                          }
+                                        >
+                                          {server.connected ? "断开" : "连接"}
+                                        </button>
+                                        <button
+                                          className="text-button danger"
+                                          disabled={toolBusy}
+                                          onClick={() =>
+                                            runToolAction(() => deleteToolServer(server.id))
+                                          }
+                                        >
+                                          删除
+                                        </button>
+                                      </div>
+                                    </li>
+                                  ))}
+                                </ul>
+                                <div className="skill-new">
+                                  <input
+                                    placeholder="服务器名，例如 campus-tools"
+                                    value={toolForm.name}
+                                    maxLength={64}
+                                    onChange={(event) =>
+                                      setToolForm({ ...toolForm, name: event.target.value })
+                                    }
+                                    aria-label="工具服务名称"
+                                  />
+                                  <input
+                                    placeholder="Base URL，例如 http://mcp-demo:8090"
+                                    value={toolForm.base_url}
+                                    onChange={(event) =>
+                                      setToolForm({ ...toolForm, base_url: event.target.value })
+                                    }
+                                    aria-label="工具服务地址"
+                                  />
+                                  <input
+                                    placeholder="访问令牌（可留空，使用服务端 MCP_AUTH_TOKEN）"
+                                    type="password"
+                                    value={toolForm.auth_token}
+                                    onChange={(event) =>
+                                      setToolForm({ ...toolForm, auth_token: event.target.value })
+                                    }
+                                    aria-label="工具服务令牌"
+                                  />
+                                  <button
+                                    className="secondary"
+                                    disabled={
+                                      toolBusy ||
+                                      !toolForm.name.trim() ||
+                                      !toolForm.base_url.trim()
+                                    }
+                                    onClick={() =>
+                                      runToolAction(async () => {
+                                        const created = await registerToolServer({
+                                          name: toolForm.name.trim(),
+                                          base_url: toolForm.base_url.trim(),
+                                          auth_token: toolForm.auth_token.trim() || undefined,
+                                        });
+                                        setToolForm({ name: "", base_url: "", auth_token: "" });
+                                        try {
+                                          await connectToolServer(created.id);
+                                        } catch (error) {
+                                          setToolError((error as Error).message);
+                                        }
+                                        return created;
+                                      })
+                                    }
+                                  >
+                                    <Plus size={16} /> 登记并连接
+                                  </button>
+                                </div>
+                              </section>
+                              <section className="prompt-editor tool-calls">
+                                <header>
+                                  <span>调用记录</span>
+                                  <small>只增不改；只显示你自己范围内的记录。</small>
+                                </header>
+                                <div className="tool-filter">
+                                  {[
+                                    ["", "全部"],
+                                    ["success", "成功"],
+                                    ["rejected", "被拒"],
+                                    ["error", "出错"],
+                                  ].map(([value, label]) => (
+                                    <button
+                                      key={value}
+                                      className={toolOutcome === value ? "chip active" : "chip"}
+                                      onClick={() => {
+                                        setToolOutcome(value);
+                                        void loadToolCalls(value);
+                                      }}
+                                    >
+                                      {label}
+                                    </button>
+                                  ))}
+                                </div>
+                                {toolCalls.length === 0 ? (
+                                  <p className="empty-hint">暂无调用记录。</p>
+                                ) : (
+                                  <table className="tool-call-table">
+                                    <thead>
+                                      <tr>
+                                        <th>时间</th>
+                                        <th>工具</th>
+                                        <th>结果</th>
+                                        <th>第几轮</th>
+                                        <th>提问者</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {toolCalls.map((call) => (
+                                        <tr key={call.id}>
+                                          <td>
+                                            {new Date(call.created_at).toLocaleString("zh-CN", {
+                                              month: "2-digit",
+                                              day: "2-digit",
+                                              hour: "2-digit",
+                                              minute: "2-digit",
+                                            })}
+                                          </td>
+                                          <td>
+                                            {call.tool}
+                                            {call.server_name ? "@" + call.server_name : ""}
+                                          </td>
+                                          <td>
+                                            <span className={`outcome ${call.outcome}`}>
+                                              {call.outcome === "success"
+                                                ? "成功"
+                                                : call.outcome === "rejected"
+                                                  ? "被拒"
+                                                  : "出错"}
+                                            </span>
+                                            {call.detail ? <small> {call.detail}</small> : null}
+                                          </td>
+                                          <td>{call.turn}</td>
+                                          <td>{call.trigger_user || "—"}</td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                )}
+                              </section>
+                            </>
                           )}
                           <div className="settings-row">
                           <div>

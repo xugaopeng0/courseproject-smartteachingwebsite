@@ -44,7 +44,7 @@ func testApp(t *testing.T) (*App, context.Context) {
 	if _, err = db.ExecContext(ctx, `SET FOREIGN_KEY_CHECKS=0`); err != nil {
 		t.Fatal(err)
 	}
-	for _, table := range []string{"chat_messages", "chat_sessions", "prompts",
+	for _, table := range []string{"chat_messages", "chat_sessions", "tool_calls", "tool_server_tools", "tool_servers", "prompts",
 		"knowledge_jobs", "knowledge_chunks", "knowledge_generations", "knowledge_documents", "knowledge_profiles",
 		"schema_migrations", "handouts", "memberships", "classrooms", "sessions", "users"} {
 		if _, err = db.ExecContext(ctx, "DROP TABLE IF EXISTS "+table); err != nil {

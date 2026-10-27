@@ -89,3 +89,13 @@ def run(ctx):
 | `npm run test:e2e` | 部署级回归：角色、会话、上传、重启持久化（73 项，Node） |
 | `npm run test:knowledge` | 经课程网关的中文召回与问答验收（需真实网关） |
 | `npm run test:db` | 后端数据库层单元测试（便携 MySQL + Qdrant） |
+
+## 第 6 课新增用例
+
+`cases/api/tool-servers/`（登记、连接、断开、删除）、`cases/api/tool-calls/`（记录列表、默认上限、结果筛选、学生 403）、
+`cases/api/tool-flow/`（端到端：连接 → 绑定 `formula_hint@…` 技能 → 会话提问 → 记录出现成功）。
+
+端到端用例要求环境里有一台可达的 MCP 工具服务：Compose 部署下即 `http://mcp-demo:8090`（用例登记的就是这个地址）。
+`dev:local` 下 API 在宿主机运行、访问不到容器内网的 `mcp-demo`，因此这组用例请对着 Compose 部署运行：
+
+    $env:APITEST_BASE_URL = "http://localhost:8080"; npm run test:api

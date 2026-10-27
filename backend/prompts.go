@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -33,14 +34,15 @@ const (
 )
 
 type promptRow struct {
-	ID        string `json:"id"`
-	Scope     string `json:"scope"`
-	ClassID   string `json:"class_id,omitempty"`
-	Kind      string `json:"kind"`
-	Name      string `json:"name"`
-	Body      string `json:"body"`
-	Enabled   bool   `json:"enabled"`
-	UpdatedAt string `json:"updated_at,omitempty"`
+	ID        string   `json:"id"`
+	Scope     string   `json:"scope"`
+	ClassID   string   `json:"class_id,omitempty"`
+	Kind      string   `json:"kind"`
+	Name      string   `json:"name"`
+	Body      string   `json:"body"`
+	Enabled   bool     `json:"enabled"`
+	Tools     []string `json:"tools,omitempty"`
+	UpdatedAt string   `json:"updated_at,omitempty"`
 }
 
 func newID() string {
@@ -102,16 +104,17 @@ func (a *App) effectivePrompt(ctx context.Context, classID string) (string, stri
 // skillState 是一个技能名在某个班级下的生效状态：
 // 班级行存在时以班级为准（enabled 与正文都算），班级行正文为空表示沿用平台正文。
 type skillState struct {
-	Name    string `json:"name"`
-	Body    string `json:"body"`
-	Enabled bool   `json:"enabled"`
-	Scope   string `json:"scope"`
+	Name    string   `json:"name"`
+	Body    string   `json:"body"`
+	Enabled bool     `json:"enabled"`
+	Scope   string   `json:"scope"`
+	Tools   []string `json:"tools"`
 }
 
 // skillsState 返回「平台技能 + 该班班级技能」合并后的完整状态（含已停用的，供管理界面展示）。
 func (a *App) skillsState(ctx context.Context, classID string) ([]skillState, error) {
 	rows, err := a.db.QueryContext(ctx, `
-		SELECT IFNULL(class_id,''),name,body,enabled FROM prompts
+		SELECT IFNULL(class_id,''),name,body,enabled,tools FROM prompts
 		WHERE kind=? AND (class_id IS NULL OR class_id=?)`, promptKindSkill, classID)
 	if err != nil {
 		return nil, err
@@ -125,7 +128,8 @@ func (a *App) skillsState(ctx context.Context, classID string) ([]skillState, er
 	for rows.Next() {
 		var classIDValue, name, body string
 		var enabled bool
-		if err = rows.Scan(&classIDValue, &name, &body, &enabled); err != nil {
+		var toolsRaw sql.NullString
+		if err = rows.Scan(&classIDValue, &name, &body, &enabled, &toolsRaw); err != nil {
 			return nil, err
 		}
 		item, seen := byName[name]
@@ -134,7 +138,7 @@ func (a *App) skillsState(ctx context.Context, classID string) ([]skillState, er
 			byName[name] = item
 			order = append(order, name)
 		}
-		state := &skillState{Name: name, Body: body, Enabled: enabled, Scope: "platform"}
+		state := &skillState{Name: name, Body: body, Enabled: enabled, Scope: "platform", Tools: decodeToolRefs(toolsRaw)}
 		if classIDValue == "" {
 			item.platform = state
 		} else {
@@ -148,7 +152,7 @@ func (a *App) skillsState(ctx context.Context, classID string) ([]skillState, er
 	out := make([]skillState, 0, len(order))
 	for _, name := range order {
 		item := byName[name]
-		merged := skillState{Name: name, Scope: "platform"}
+		merged := skillState{Name: name, Scope: "platform", Tools: []string{}}
 		switch {
 		case item.class != nil:
 			merged.Enabled = item.class.Enabled
@@ -157,13 +161,32 @@ func (a *App) skillsState(ctx context.Context, classID string) ([]skillState, er
 			if merged.Body == "" && item.platform != nil {
 				merged.Body = item.platform.Body
 			}
+			// 工具项与正文同样按「班级优先、空则沿用平台」合并。
+			if len(item.class.Tools) > 0 {
+				merged.Tools = item.class.Tools
+			} else if item.platform != nil {
+				merged.Tools = item.platform.Tools
+			}
 		case item.platform != nil:
 			merged.Enabled = item.platform.Enabled
 			merged.Body = item.platform.Body
+			merged.Tools = item.platform.Tools
 		}
 		out = append(out, merged)
 	}
 	return out, nil
+}
+
+// decodeToolRefs 把数据库里的 tools JSON 列解成字符串数组；空值返回空数组。
+func decodeToolRefs(raw sql.NullString) []string {
+	if !raw.Valid || strings.TrimSpace(raw.String) == "" {
+		return []string{}
+	}
+	var tools []string
+	if err := json.Unmarshal([]byte(raw.String), &tools); err != nil {
+		return []string{}
+	}
+	return tools
 }
 
 // effectiveSkills 只保留启用中的技能，用于组装对话输入。
@@ -175,7 +198,7 @@ func (a *App) effectiveSkills(ctx context.Context, classID string) ([]promptRow,
 	out := make([]promptRow, 0, len(states))
 	for _, state := range states {
 		if state.Enabled {
-			out = append(out, promptRow{Name: state.Name, Body: state.Body, Kind: promptKindSkill, Enabled: true})
+			out = append(out, promptRow{Name: state.Name, Body: state.Body, Kind: promptKindSkill, Enabled: true, Tools: state.Tools})
 		}
 	}
 	return out, nil

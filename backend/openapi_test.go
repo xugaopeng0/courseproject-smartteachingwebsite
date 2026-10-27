@@ -83,7 +83,7 @@ func TestOpenAPIMatchesRoutes(t *testing.T) {
 	if len(missing) > 0 || len(extra) > 0 {
 		t.Fatalf("契约与路由不一致\n  实现有而文档缺: %v\n  文档有而实现无: %v", missing, extra)
 	}
-	if len(implemented) != 39 {
+	if len(implemented) != 46 {
 		t.Fatalf("操作数量变化时应同步更新本断言：实际 %d 个", len(implemented))
 	}
 }

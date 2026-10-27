@@ -2,6 +2,7 @@ package main
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
@@ -22,8 +23,9 @@ type promptInput struct {
 }
 
 type skillInput struct {
-	Body    *string `json:"body"`
-	Enabled *bool   `json:"enabled"`
+	Body    *string   `json:"body"`
+	Enabled *bool     `json:"enabled"`
+	Tools   *[]string `json:"tools"`
 }
 
 // ownerEditable 取班级并要求「所属教师 + 未归档」；学生与其他教师都被拒绝。
@@ -176,10 +178,29 @@ func (a *App) updateClassSkill(w http.ResponseWriter, r *http.Request, u *User) 
 			return err
 		}
 	}
+	// 工具项：省略时沿用既有（本班行 → 平台行），提供时按归属、连接状态与发现清单校验。
+	toolsJSON := sql.NullString{}
+	{
+		var existingTools sql.NullString
+		err = a.db.QueryRowContext(r.Context(), `SELECT tools FROM prompts WHERE scope='class' AND class_id=? AND kind=? AND name=?`, c.ID, promptKindSkill, name).Scan(&existingTools)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
+		if input.Tools != nil {
+			normalized, err := a.normalizeSkillTools(r.Context(), u.ID, *input.Tools, true)
+			if err != nil {
+				return err
+			}
+			encoded, _ := json.Marshal(normalized)
+			toolsJSON = sql.NullString{String: string(encoded), Valid: true}
+		} else if existingTools.Valid {
+			toolsJSON = existingTools
+		}
+	}
 	if _, err = a.db.ExecContext(r.Context(), `
-		INSERT INTO prompts(id,scope,class_id,kind,name,body,enabled,created_by) VALUES(?,?,?,?,?,?,?,?) AS new
-		ON DUPLICATE KEY UPDATE body=new.body,enabled=new.enabled,updated_at=NOW(6)`,
-		newID(), "class", c.ID, promptKindSkill, name, body, enabled, u.ID); err != nil {
+		INSERT INTO prompts(id,scope,class_id,kind,name,body,enabled,created_by,tools) VALUES(?,?,?,?,?,?,?,?,?) AS new
+		ON DUPLICATE KEY UPDATE body=new.body,enabled=new.enabled,tools=IF(new.tools IS NULL,prompts.tools,new.tools),updated_at=NOW(6)`,
+		newID(), "class", c.ID, promptKindSkill, name, body, enabled, u.ID, toolsJSON); err != nil {
 		return err
 	}
 	view, err := a.classPromptView(r, c, u)
@@ -319,10 +340,20 @@ func (a *App) updateAdminSkill(w http.ResponseWriter, r *http.Request, u *User) 
 			return err
 		}
 	}
+	// 平台技能只允许内置知识库检索：管理员没有工具服务器归属，跨用户引用会破坏隔离。
+	toolsJSON := sql.NullString{}
+	if input.Tools != nil {
+		normalized, err := a.normalizeSkillTools(r.Context(), u.ID, *input.Tools, false)
+		if err != nil {
+			return err
+		}
+		encoded, _ := json.Marshal(normalized)
+		toolsJSON = sql.NullString{String: string(encoded), Valid: true}
+	}
 	if _, err = a.db.ExecContext(r.Context(), `
-		INSERT INTO prompts(id,scope,class_id,kind,name,body,enabled,created_by) VALUES(?,?,NULL,?,?,?,?,?) AS new
-		ON DUPLICATE KEY UPDATE body=IF(new.body='',prompts.body,new.body),enabled=new.enabled,updated_at=NOW(6)`,
-		newID(), "platform", promptKindSkill, name, body, enabled, u.ID); err != nil {
+		INSERT INTO prompts(id,scope,class_id,kind,name,body,enabled,created_by,tools) VALUES(?,?,NULL,?,?,?,?,?,?) AS new
+		ON DUPLICATE KEY UPDATE body=IF(new.body='',prompts.body,new.body),enabled=new.enabled,tools=IF(new.tools IS NULL,prompts.tools,new.tools),updated_at=NOW(6)`,
+		newID(), "platform", promptKindSkill, name, body, enabled, u.ID, toolsJSON); err != nil {
 		return err
 	}
 	view, err := a.platformPromptView(r)

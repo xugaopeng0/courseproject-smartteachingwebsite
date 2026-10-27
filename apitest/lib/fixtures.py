@@ -33,6 +33,7 @@ class Fixtures:
         self.created_users: list[str] = []
         self.created_classes: list[str] = []
         self.created_handouts: list[str] = []
+        self.created_tool_servers: list[str] = []
         self.teacher_token: str | None = None
 
     def admin_token(self) -> str:
@@ -131,6 +132,29 @@ class Fixtures:
         except (urllib.error.URLError, OSError, ValueError):
             return None
 
+    def create_student(self) -> str:
+        """注册一个学生账号并返回令牌（用于验证「非管理角色被拒」）。"""
+        name = "apits" + suffix()
+        password = "apitest-" + suffix(10)
+        self.api.request(
+            "POST",
+            "/api/auth/register",
+            body={"username": name, "name": "接口测试学生", "password": password},
+            expect=(200, 201),
+        )
+        student_id = self.db.scalar("SELECT id FROM users WHERE username=%s", (name,))
+        if student_id:
+            self.created_users.append(student_id)
+        return self.token_for(name, password)
+
+    def register_tool_server(self, teacher_token: str, name: str, base_url: str) -> dict[str, Any]:
+        """登记一台工具服务并返回视图。"""
+        _, body = self.api.request(
+            "POST", "/api/tool-servers", body={"name": name, "base_url": base_url}, token=teacher_token, expect=201
+        )
+        self.created_tool_servers.append(body["id"])
+        return body
+
     def cleanup(self) -> list[str]:
         """删除本次创建的数据；返回未能清理的条目说明。
 
@@ -150,6 +174,11 @@ class Fixtures:
                 self.db.query("DELETE FROM classrooms WHERE id=%s", (class_id,))
             except Exception as error:  # noqa: BLE001
                 problems.append(f"删除班级 {class_id} 失败: {error}")
+        for server_id in list(self.created_tool_servers):
+            try:
+                self.api.request("DELETE", f"/api/tool-servers/{server_id}", token=token, expect=(200, 403, 404))
+            except Exception as error:  # noqa: BLE001
+                problems.append(f"删除工具服务 {server_id} 失败: {error}")
         for user_id in list(self.created_users):
             try:
                 self.db.query("DELETE FROM memberships WHERE user_id=%s", (user_id,))

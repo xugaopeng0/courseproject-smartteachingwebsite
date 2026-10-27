@@ -67,5 +67,12 @@ func (a *App) routes() []routeSpec {
 		{"GET", "/api/classes/{id}/sessions", true, a.listChatSessions},
 		{"GET", "/api/classes/{id}/sessions/{sid}", true, a.chatSessionMessages},
 		{"POST", "/api/classes/{id}/sessions/{sid}/messages", true, a.sendChatMessage},
+		{"GET", "/api/tool-servers", true, a.listToolServersHandler},
+		{"POST", "/api/tool-servers", true, a.createToolServer},
+		{"PATCH", "/api/tool-servers/{id}", true, a.updateToolServer},
+		{"DELETE", "/api/tool-servers/{id}", true, a.deleteToolServer},
+		{"POST", "/api/tool-servers/{id}/connect", true, a.connectToolServer},
+		{"POST", "/api/tool-servers/{id}/disconnect", true, a.disconnectToolServer},
+		{"GET", "/api/tool-calls", true, a.listToolCalls},
 	}
 }

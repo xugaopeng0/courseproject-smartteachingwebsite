@@ -116,3 +116,18 @@
 响应头带 `Cache-Control: no-store` 与 `X-Accel-Buffering: no`，每 15 秒发送一次 `: heartbeat` 注释行保活。客户端断开时服务端立即停止向网关索取内容，已收到的增量按 `status=interrupted` 保存，绝不记成完整回答；网关不支持流式（返回整段 JSON）时同样按错误处理，不做“攒完再一次性下发”的伪装。检索阶段失败（网关未配置、向量库不可用）在任何事件发出之前以普通 JSON 503 返回，避免流已开始还改状态码。
 
 会话与消息按班级做服务端权限判断：非本班教师与学生一律 403，跨班路径按不存在返回 404；归档班级禁止新建会话与发送消息但保留读取；成员被移除后立即失去访问。
+
+## 工具服务与调用记录（第 6 课）
+
+工具服务由教师登记与连接：`GET/POST /api/tool-servers`、`PATCH/DELETE /api/tool-servers/{id}`、
+`POST /api/tool-servers/{id}/connect`（握手 + 工具发现两步）、`POST /api/tool-servers/{id}/disconnect`。
+令牌只写不回显，任何响应只有 `has_token`；连接失败返回 502 并停在未连接（清空清单、记录原因）；
+连续连接两次不会让清单翻倍；他人的服务器标识一律按不存在返回 404；学生 403。
+
+技能的 `tools` 数组支持内置 `knowledge_search` 与 `工具名@服务器名`（例如 `formula_hint@campus-tools`，
+工具名小写字母开头、不含连字符，服务器名可含连字符）。保存时依次校验格式、服务器归属、连接状态与发现清单，
+任一不满足返回 400 并指出具体条目；平台技能只允许内置检索。
+
+会话回答的流式事件新增 `tool_call`（`running` → `ok`/`rejected`/`error`，先于正文推送），`done` 事件带
+`tools` 数组（名称、服务器、状态）。调用记录 `GET /api/tool-calls` 默认 `limit=50`、上限 200，
+可按 `outcome`、`session_id`、`server_id` 过滤；记录只增不改，只返回自己范围。

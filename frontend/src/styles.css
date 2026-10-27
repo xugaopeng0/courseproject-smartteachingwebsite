@@ -1968,3 +1968,31 @@ label textarea {
     transition: none !important;
   }
 }
+
+/* 第 6 课：工具调用步骤、工具服务与调用记录 */
+.tool-steps { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.tool-step { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #62636d; background: #fafafb; border: 1px solid #edeef1; border-radius: 8px; padding: 6px 10px; }
+.tool-step em { font-style: normal; font-size: 12px; padding: 1px 8px; border-radius: 999px; background: #f2f3f5; color: #62636d; }
+.tool-step.ok em { background: #eaf5ee; color: #2f7d4f; }
+.tool-step.rejected em { background: #fbecee; color: #b82e3c; }
+.tool-step.error em { background: #fdf1e7; color: #a3541f; }
+.tool-step small { color: #858791; }
+.tool-server-list { list-style: none; margin: 12px 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.tool-server-list li { display: flex; justify-content: space-between; gap: 12px; border: 1px solid #edeef1; border-radius: 10px; padding: 10px 12px; }
+.tool-server-list small { display: block; color: #858791; font-size: 12px; }
+.tool-url { margin: 4px 0 0; font-size: 12px; color: #62636d; word-break: break-all; }
+.tool-names { margin: 4px 0 0; font-size: 12px; color: #2f7d4f; }
+.tool-filter { display: flex; gap: 8px; margin: 10px 0; }
+.chip { border: 1px solid #edeef1; background: #fff; color: #62636d; border-radius: 999px; padding: 4px 12px; font-size: 12px; cursor: pointer; }
+.chip.active { border-color: #b82e3c; color: #b82e3c; background: #fdf3f4; }
+.tool-call-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.tool-call-table th, .tool-call-table td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #f2f3f5; vertical-align: top; }
+.tool-call-table th { background: #fafafb; color: #62636d; font-weight: 600; }
+.tool-call-table small { color: #858791; }
+.outcome { font-size: 12px; padding: 1px 8px; border-radius: 999px; }
+.outcome.success { background: #eaf5ee; color: #2f7d4f; }
+.outcome.rejected { background: #fbecee; color: #b82e3c; }
+.outcome.error { background: #fdf1e7; color: #a3541f; }
+.skill-tools { display: flex; gap: 8px; margin-top: 8px; align-items: center; }
+.skill-tools input { flex: 1; min-width: 0; font-size: 12px; }
+.inline-error { color: #b82e3c; font-size: 13px; margin: 6px 0; }

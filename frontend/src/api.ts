@@ -118,6 +118,7 @@ export type SkillState = {
   body: string;
   enabled: boolean;
   scope: "platform" | "class";
+  tools: string[];
 };
 export type PromptView = {
   prompt_body: string;
@@ -145,10 +146,17 @@ export type ChatMessage = {
   citations: AnswerCitation[];
   created_at: string;
 };
+export type ToolEvent = {
+  tool: string;
+  server: string;
+  status: "running" | "ok" | "rejected" | "error";
+  detail?: string;
+};
 export type StreamHandlers = {
   onDelta: (text: string) => void;
+  onTool: (event: ToolEvent) => void;
   onCitations: (citations: AnswerCitation[], messageId: string) => void;
-  onDone: (status: string, messageId: string) => void;
+  onDone: (status: string, messageId: string, tools: ToolEvent[]) => void;
   onError: (message: string) => void;
 };
 
@@ -217,6 +225,8 @@ export async function streamChatMessage(
       return;
     }
     if (name === "delta") handlers.onDelta(String(payload.text ?? ""));
+    else if (name === "tool_call")
+      handlers.onTool(payload as unknown as ToolEvent);
     else if (name === "citations")
       handlers.onCitations(
         (payload.citations as AnswerCitation[]) ?? [],
@@ -226,6 +236,7 @@ export async function streamChatMessage(
       handlers.onDone(
         String(payload.status ?? "complete"),
         String(payload.message_id ?? ""),
+        (payload.tools as ToolEvent[]) ?? [],
       );
     else if (name === "error") handlers.onError(String(payload.error ?? "回答中断"));
   };
@@ -256,7 +267,7 @@ export const resetClassPrompt = (id: string) =>
 export const saveClassSkill = (
   id: string,
   name: string,
-  input: { body?: string; enabled?: boolean },
+  input: { body?: string; enabled?: boolean; tools?: string[] },
 ) =>
   api<PromptView>(
     `/classes/${id}/skills/${encodeURIComponent(name)}`,
@@ -275,3 +286,55 @@ export const size = (n: number) =>
   n < 1024 * 1024
     ? `${Math.max(1, Math.round(n / 1024))} KB`
     : `${(n / 1024 / 1024).toFixed(1)} MB`;
+export type DiscoveredTool = {
+  name: string;
+  description: string;
+  input_schema: Record<string, unknown>;
+};
+export type ToolServer = {
+  id: string;
+  name: string;
+  base_url: string;
+  connected: boolean;
+  has_token: boolean;
+  last_error: string;
+  connected_at?: string;
+  tools: DiscoveredTool[];
+};
+export type ToolCallRecord = {
+  id: string;
+  server_id?: string;
+  server_name: string;
+  tool: string;
+  outcome: "success" | "rejected" | "error";
+  detail: string;
+  class_id?: string;
+  session_id?: string;
+  turn: number;
+  trigger_user_id?: string;
+  trigger_user: string;
+  created_at: string;
+};
+export const toolServers = () =>
+  api<{ servers: ToolServer[] }>("/tool-servers");
+export const registerToolServer = (input: {
+  name: string;
+  base_url: string;
+  auth_token?: string;
+}) => api<ToolServer>("/tool-servers", json("POST", input));
+export const updateToolServer = (
+  id: string,
+  input: { name: string; base_url: string; auth_token?: string },
+) => api<ToolServer>(`/tool-servers/${id}`, json("PATCH", input));
+export const deleteToolServer = (id: string) =>
+  api<{ ok: boolean }>(`/tool-servers/${id}`, json("DELETE"));
+export const connectToolServer = (id: string) =>
+  api<ToolServer>(`/tool-servers/${id}/connect`, json("POST"));
+export const disconnectToolServer = (id: string) =>
+  api<ToolServer>(`/tool-servers/${id}/disconnect`, json("POST"));
+export const toolCallRecords = (query: string) =>
+  api<{
+    calls: ToolCallRecord[];
+    has_more: boolean;
+    limit: number;
+  }>(`/tool-calls${query ? "?" + query : ""}`);

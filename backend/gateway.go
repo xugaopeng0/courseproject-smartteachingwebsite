@@ -32,9 +32,47 @@ type gatewayClient struct {
 }
 
 // chatMessage 是对话模块的消息；服务端只接受 user 与 assistant 两种角色。
+// 工具调用沿用 OpenAI 兼容协议：assistant 消息带 tool_calls，工具结果以 tool 角色回传。
 type chatMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+	Role       string         `json:"role"`
+	Content    string         `json:"content"`
+	ToolCalls  []toolCallWire `json:"tool_calls,omitempty"`
+	ToolCallID string         `json:"tool_call_id,omitempty"`
+}
+
+// toolCallWire 是 assistant 消息里回传给模型的历史工具调用。
+type toolCallWire struct {
+	ID       string `json:"id"`
+	Type     string `json:"type"`
+	Function struct {
+		Name      string `json:"name"`
+		Arguments string `json:"arguments"`
+	} `json:"function"`
+}
+
+// toolSpec 是随请求声明的工具：名称、说明与输入结构决定模型是否会选它。
+type toolSpec struct {
+	Type     string           `json:"type"`
+	Function toolSpecFunction `json:"function"`
+}
+
+type toolSpecFunction struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Parameters  any    `json:"parameters"`
+}
+
+// toolCall 是模型提出的一次调用；arguments 是模型填的 JSON 字符串，需要宿主校验。
+type toolCall struct {
+	ID        string
+	Name      string
+	Arguments string
+}
+
+// streamRound 是一轮流式调用的结果：正文、工具调用与是否正常结束。
+type streamRound struct {
+	Content   string
+	ToolCalls []toolCall
 }
 
 func newGatewayClient(dimensions int) *gatewayClient {
@@ -286,4 +324,142 @@ func (g *gatewayClient) chatStream(ctx context.Context, messages []chatMessage, 
 		return errors.New("课程网关流式响应未正常结束")
 	}
 	return nil
+}
+
+// chatStreamRound 是带工具声明的流式调用：正文增量交给 emit，工具调用在整轮结束后返回。
+//
+// 与 chatStream 的区别只在于多解析 delta.tool_calls 并把它们累积成完整调用；
+// 没有工具调用时行为与 chatStream 完全一致（同样拒绝截断与非流式响应）。
+func (g *gatewayClient) chatStreamRound(ctx context.Context, messages []chatMessage, specs []toolSpec, emit func(string) error) (streamRound, error) {
+	round := streamRound{}
+	if !g.chatConfigured() {
+		return round, errors.New("课程网关未配置对话模型")
+	}
+	body := map[string]any{"model": g.chatModel, "messages": messages, "stream": true}
+	if len(specs) > 0 {
+		body["tools"] = specs
+		body["tool_choice"] = "auto"
+	}
+	raw, err := json.Marshal(body)
+	if err != nil {
+		return round, err
+	}
+	base, key := g.chatEndpoint()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, base+"/chat/completions", bytes.NewReader(raw))
+	if err != nil {
+		return round, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "text/event-stream")
+	if key != "" {
+		req.Header.Set("Authorization", "Bearer "+key)
+	}
+	resp, err := g.streamClient().Do(req)
+	if err != nil {
+		return round, fmt.Errorf("课程网关不可用: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		detail, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		return round, fmt.Errorf("课程网关返回状态 %d: %s", resp.StatusCode, strings.TrimSpace(string(detail)))
+	}
+
+	type partialTool struct {
+		ID   string
+		Name string
+		Args strings.Builder
+	}
+	byIndex := map[int]*partialTool{}
+	order := []int{}
+
+	scanner := bufio.NewScanner(resp.Body)
+	scanner.Buffer(make([]byte, 0, 64*1024), 1<<20)
+	emitted := false
+	finished := false
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, ":") {
+			continue
+		}
+		if strings.HasPrefix(line, "{") {
+			return round, errors.New("课程网关未按流式返回（收到整段响应）")
+		}
+		if !strings.HasPrefix(line, "data:") {
+			continue
+		}
+		payload := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+		if payload == "[DONE]" {
+			finished = true
+			break
+		}
+		var chunk struct {
+			Choices []struct {
+				Delta struct {
+					Content   string `json:"content"`
+					ToolCalls []struct {
+						Index    int    `json:"index"`
+						ID       string `json:"id"`
+						Function struct {
+							Name      string `json:"name"`
+							Arguments string `json:"arguments"`
+						} `json:"function"`
+					} `json:"tool_calls"`
+				} `json:"delta"`
+				Message struct {
+					Content string `json:"content"`
+				} `json:"message"`
+			} `json:"choices"`
+			Error *struct {
+				Message string `json:"message"`
+			} `json:"error"`
+		}
+		if err = json.Unmarshal([]byte(payload), &chunk); err != nil {
+			return round, fmt.Errorf("课程网关流式分片无法解析: %w", err)
+		}
+		if chunk.Error != nil {
+			return round, fmt.Errorf("课程网关返回错误: %s", chunk.Error.Message)
+		}
+		for _, choice := range chunk.Choices {
+			text := choice.Delta.Content
+			if text == "" {
+				text = choice.Message.Content
+			}
+			if text != "" {
+				round.Content += text
+				if emit != nil {
+					if err = emit(text); err != nil {
+						return round, err
+					}
+				}
+				emitted = true
+			}
+			for _, call := range choice.Delta.ToolCalls {
+				slot, ok := byIndex[call.Index]
+				if !ok {
+					slot = &partialTool{}
+					byIndex[call.Index] = slot
+					order = append(order, call.Index)
+				}
+				if call.ID != "" {
+					slot.ID = call.ID
+				}
+				slot.Name += call.Function.Name
+				slot.Args.WriteString(call.Function.Arguments)
+			}
+		}
+	}
+	if err = scanner.Err(); err != nil {
+		return round, fmt.Errorf("读取流式响应失败: %w", err)
+	}
+	for _, index := range order {
+		slot := byIndex[index]
+		round.ToolCalls = append(round.ToolCalls, toolCall{ID: slot.ID, Name: slot.Name, Arguments: slot.Args.String()})
+	}
+	if !emitted && len(round.ToolCalls) == 0 {
+		return round, errors.New("课程网关未返回任何内容")
+	}
+	if !finished {
+		return round, errors.New("课程网关流式响应未正常结束")
+	}
+	return round, nil
 }

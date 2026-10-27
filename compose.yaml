@@ -26,6 +26,12 @@ x-app-environment: &app-environment
   SEED_ENABLED: ${SEED_ENABLED:-true}
   SEED_DIR: /data/seeds
   SEED_CLASS_NAME: ${SEED_CLASS_NAME:-示例班级}
+  # 自建 MCP 工具服务（第 6 课）：令牌与 Base URL 只经环境变量注入。
+  MCP_AUTH_TOKEN: ${MCP_AUTH_TOKEN:-}
+  MCP_BASE_URL: ${MCP_BASE_URL:-http://mcp-demo:8090}
+  TOOL_SECRET_KEY: ${TOOL_SECRET_KEY:-}
+  CHAT_MAX_TOOL_ROUNDS: ${CHAT_MAX_TOOL_ROUNDS:-3}
+  CHAT_MAX_TOOL_CALLS: ${CHAT_MAX_TOOL_CALLS:-4}
 
 services:
   db:
@@ -120,6 +126,28 @@ services:
       timeout: 5s
       retries: 5
       start_period: 30s
+    restart: unless-stopped
+    networks:
+      - app
+
+  # 自建 MCP 工具服务：与 api 同处 app 内网，不发布宿主端口。
+  # 令牌只经环境变量注入（.env 的 MCP_AUTH_TOKEN），镜像与代码里都不写死。
+  mcp-demo:
+    build: ./mcp-server
+    environment:
+      MCP_AUTH_TOKEN: ${MCP_AUTH_TOKEN:-}
+      PORT: '8090'
+    expose:
+      - '8090'
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: [CMD, wget, -q, -O-, 'http://127.0.0.1:8090/health']
+      interval: 15s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
     restart: unless-stopped
     networks:
       - app

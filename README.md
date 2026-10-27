@@ -138,6 +138,34 @@ Docker 部署验收：`node scripts/deployment-test.mjs`。脚本读取本地 `.
 
 该脚本还验证浏览器 TXT/MD 上传和下载。只检查已部署功能、不重建容器时使用 `node scripts/deployment-test.mjs --skip-recreate`。
 
+## 工具服务（MCP，第 6 课）
+
+`mcp-server/` 是一个独立的 MCP 工具服务（Go 标准库，无第三方依赖），与主应用同一套 Compose 构建启动：
+
+```powershell
+docker compose up -d --build mcp-demo   # 只构建/启动工具服务
+```
+
+- 服务名 `mcp-demo`，容器内监听 `8090`，**只 expose 不发布宿主端口**；`api` 与 `worker` 经 `http://mcp-demo:8090` 访问。
+- 协议：JSON-RPC 2.0 单入口 `POST /mcp`，方法 `initialize` / `tools/list` / `tools/call`；另有无需令牌的 `GET /health`。
+- 令牌从环境变量 `MCP_AUTH_TOKEN` 读取（`.env` 注入），不写进代码、不进镜像、不下发前端；缺失或错误一律拒绝。
+- 暴露两个工具：`formula_hint`（给公式、符号与思路，不给最终数值答案）、`unit_convert`（同类量纯单位换算）。
+
+宿主侧接入在「班级设置 → 工具服务」里完成：教师登记名称与 Base URL（例如 `http://mcp-demo:8090`）→ 连接（握手 + 工具发现）→
+在同一页把所有者的技能绑定工具（`tool@server`，例如 `formula_hint@campus-tools`）。连接成功后能看到发现的工具名；
+会话回答里会先出现工具调用步骤，再给出正文；下方「调用记录」列出每次调用的工具、结果、第几轮与提问者。
+令牌只在服务端，界面只显示「已配置令牌」。
+
+单独验证（容器里没有 curl，`wget` 又不支持自定义请求头，因此用 compose 内网里的 Node 发请求）：
+
+```powershell
+$token = (Select-String -Path .env -Pattern '^MCP_AUTH_TOKEN=(.*)$').Matches[0].Groups[1].Value.Trim()
+docker run --rm --network zhixu-teaching_app -e TOKEN=$token -e MCP_URL=http://mcp-demo:8090 `
+  -v "$($PWD)/.local:/check:ro" node:24-alpine node /check/mcp-check.mjs
+```
+
+该脚本逐条断言健康检查、能力协商、工具发现、两个工具的执行、四类协议错误码与令牌边界（当前 17/17 通过）。
+
 ### 本机代理环境下的构建
 
 本次部署遇到 Docker Hub 认证超时及构建容器 npm 下载缓慢，已通过现有代理完成构建。若重建时遇到相同问题，可在当前 PowerShell 中设置（端口需与自己的系统代理一致；本机为 7897）：

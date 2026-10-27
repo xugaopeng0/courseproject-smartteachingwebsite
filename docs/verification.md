@@ -379,3 +379,84 @@ APITEST_BASE_URL=http://localhost:8080 npm run test:api
 这一轮验证发现并修掉一个真实缺陷：容器内 `mysql` 的批处理输出（`-N -B`）全部是文本、且把换行等字符转义输出，
 于是 `COUNT(*)` 变成字符串 `'0'`、正文里的换行变成字面 `\n`，断言随之失败（首次运行 3/8）。
 现在 compose-exec 解析会还原转义并把纯数字转回数值，两种模式的结果因此完全一致。
+
+## MCP 工具服务验证（2026-10-27，第 6 课变更 `mcp-tool-server`）
+
+自建工具服务 `mcp-server/`（Go 标准库）已实现并通过独立验收；本条目对应的是**服务本身**，宿主侧接入见后续变更 `tool-bridge`。
+
+单元测试：`cd mcp-server && go vet ./... && go test ./...` → `ok mcp-server 3.3s`，覆盖协议错误码、令牌校验、
+`initialize`/`tools/list` 结构、两个工具的执行、跨类换算的 `isError` 语义与 JSON Schema 子集校验器用例表。
+
+容器与部署：
+
+- `docker compose build mcp-demo` 成功；`docker compose ps mcp-demo` 的端口列只有 `8090/tcp`（只 expose，未发布宿主端口）。
+- 从 `api` 容器访问 `http://mcp-demo:8090/health` 返回 `{"status":"ok","tools":2}`（同网互通）。
+- 在构建后的镜像内检索令牌字面值为 **0 命中**（令牌只经环境变量注入）。
+
+HTTP 级验收：容器里没有 curl、busybox 的 `wget` 又不支持自定义请求头，因此用 compose 内网的 Node 发请求
+（`.local/mcp-check.mjs`，**17/17 通过**）：
+
+| 检查 | 结果 |
+| --- | --- |
+| `GET /health` 无需令牌 | `{"status":"ok","tools":2}` |
+| `initialize` | `protocolVersion=2025-06-18`、`capabilities.tools`、`serverInfo.name=campus-mcp-tools`，且不返回工具清单 |
+| `tools/list` | 两个工具，均含名称、说明与输入结构；说明写明「不适用」的边界；顺序稳定（`formula_hint,unit_convert`） |
+| `tools/call` `unit_convert` | `1.2 km = 1200 m（长度换算）` |
+| `tools/call` `formula_hint` | 含公式、符号、下一步，且不含最终数值答案 |
+| 跨类换算 | `isError=true`（业务失败），不是协议错误 |
+| 未知方法 / 缺少必填参数 / 未知工具 / 非法 JSON | `-32601` / `-32602` / `-32602` / `-32700`，信息可读 |
+| 无令牌 | HTTP 401 且响应体不含任何工具名 |
+| 通知与非 POST | `notifications/initialized` → 202 空响应；`GET /mcp` → 405 并说明只接受 POST |
+| 令牌不外泄 | 所有响应中检索不到令牌字面值 |
+
+尚未完成，不计入通过：无。
+
+## MCP 工具接入验证（2026-10-27，第 6 课变更 `tool-bridge`）
+
+### 自动化
+
+| 检查 | 命令 | 结果 |
+| --- | --- | --- |
+| 后端全量测试（含工具链路用例） | `node scripts/test-db.mjs` | `ok teaching-platform 162.1s` |
+| 接口测试套件（Compose 部署、compose-exec 模式） | `APITEST_BASE_URL=http://localhost:8080 npm run test:api` | **15/15 通过，34.0 秒** |
+| 契约一致性（46 个操作，含 7 个新接口） | `go test -run TestOpenAPI` | 5 项全过 |
+| 规约校验 | `npx openspec validate --all --strict` | 17/17 |
+
+新增 Go 用例覆盖：登记/改名/删除与跨教师隔离、令牌只回 `has_token`、连接两步成功才替换清单、连接失败停在未连接且**不影响检索与流式对话主路径**、
+连续连接不翻倍、断开幂等、技能工具项四种非法输入且**失败不改动既有内容**、候选集过滤与上限、参数校验后被拒、
+结果净化（丢弃指令句/截断/**只作为 tool 消息回传、不进 system 提示词**）、轮次与调用上限降级、
+记录五个要素与三种结果、服务器改名或删除时不写记录。
+
+`apitest` 新增 6 个用例（登记、连接、断开、删除、记录、端到端流程）。端到端用例实跑：
+**连接 `http://mcp-demo:8090` → 发现 `formula_hint`/`unit_convert` → 保存 `formula_hint@campus-tools` 技能 → 会话提问 →
+流中出现 `tool_call` 事件且状态成功、`done.tools` 带工具 → 记录接口查到同一条 success（工具名、服务器名、会话一致）**。
+
+### 界面（真实浏览器，`.local/tool-ui-check.mjs`，6/6 通过）
+
+| 检查 | 结果 |
+| --- | --- |
+| 班级设置里登记并连接 | 显示「campus-tools 已连接 · 2 个工具 · 已配置令牌」与 `formula_hint、unit_convert` |
+| 技能工具项保存 | 保存后回显 `formula_hint@campus-tools` |
+| 会话中的工具步骤 | 气泡内出现 `formula_hint@campus-tools 成功`，回答非空 |
+| 调用记录 | 表格出现「formula_hint@campus-tools 成功 1 工具界面教师」，可按结果筛选 |
+| 断开后保存引用 | 就地报错（提示尚未连接），改动被拒绝 |
+| 页面脚本错误 | 0 |
+
+截图：`.local/screenshots/tool-servers.png`、`tool-skill-tools.png`、`tool-steps.png`、`tool-calls.png`、`tool-disconnect-reject.png`。
+
+### 验收自查项
+
+- **服务单独可验**：见上一节 17/17。
+- **端到端可验**：见 apitest 端到端用例；记录含 `formula_hint@campus-tools`、服务器名与轮次。
+- **断开后不可再调用**：断开后保存引用被拒（界面就地报错 + 接口 400「尚未连接」）；候选集为空时不再声明工具。
+- **上限生效**：`CHAT_MAX_TOOL_CALLS=0` 时用例断言不声明工具、不产生调用，仍用已有信息作答并给出兜底摘要。
+- **令牌不外泄**：宿主只回 `has_token`（用例断言无 `auth_token`/`token_cipher`）；镜像内检索令牌 0 命中；令牌不进前端。
+
+### 同伴交叉验证（可复现步骤，证据归本人验证记录）
+
+1. **服务与工具的隔离**：同伴用自己的账号登录 → 工具服务列表为空；用他人服务器标识请求连接/改名/删除均返回 404，响应与不存在的标识一致。
+2. **令牌不回传**：`GET /api/tool-servers` 整份响应检索不到令牌字符串，只有 `has_token: true`。
+3. **断开即失效**：断开后保存引用其工具的技能 → 400「尚未连接」；已引用该工具的会话提问时 `done.tools` 中状态为 `rejected`，记录多一条 `rejected`。
+4. **记录只看自己范围**：同伴打开调用记录，只看到自己范围内的记录。
+
+尚未完成，不计入通过：无。

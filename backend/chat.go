@@ -372,6 +372,10 @@ func (a *App) sendChatMessage(w http.ResponseWriter, r *http.Request, u *User) e
 	}
 
 	messages := buildAnswerMessages(buildSystemPrompt(promptBody, skills), content, evidence.Rows, normalizeHistory(history))
+	candidates, err := a.candidateTools(r.Context(), skills)
+	if err != nil {
+		return err
+	}
 	promptChars := 0
 	for _, message := range messages {
 		promptChars += len([]rune(message.Content))
@@ -398,7 +402,24 @@ func (a *App) sendChatMessage(w http.ResponseWriter, r *http.Request, u *User) e
 		return stream.event("delta", map[string]any{"text": text})
 	}
 	streamCtx, cancel := context.WithTimeout(r.Context(), chatStreamDeadline)
-	streamErr := a.gateway.chatStream(streamCtx, messages, emit)
+	var streamErr error
+	toolsUsed := []toolEvent{}
+	if len(candidates) > 0 {
+		// 有候选工具：走「模型决策 → 宿主执行 → 结果回传」的编排；工具事件先于正文推送。
+		orchestrationInput := orchestration{
+			classID:    c.ID,
+			sessionID:  session.ID,
+			ownerID:    u.ID,
+			triggerID:  u.ID,
+			candidates: candidates,
+			messages:   messages,
+		}
+		_, toolsUsed, streamErr = a.runChatWithTools(streamCtx, orchestrationInput, emit, func(event toolEvent) {
+			_ = stream.event("tool_call", event)
+		})
+	} else {
+		streamErr = a.gateway.chatStream(streamCtx, messages, emit)
+	}
 	cancel()
 	close(stop)
 
@@ -423,6 +444,10 @@ func (a *App) sendChatMessage(w http.ResponseWriter, r *http.Request, u *User) e
 		messageID = assistant.ID
 	}
 	_ = stream.event("citations", map[string]any{"message_id": messageID, "citations": citations})
-	_ = stream.event("done", map[string]any{"status": status, "message_id": messageID})
+	done := map[string]any{"status": status, "message_id": messageID}
+	if len(toolsUsed) > 0 {
+		done["tools"] = toolsUsed
+	}
+	_ = stream.event("done", done)
 	return nil
 }
