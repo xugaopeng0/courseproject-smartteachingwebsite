@@ -1,0 +1,125 @@
+{
+  "base": "http://localhost:8080",
+  "teacher": "reqxc473",
+  "classroomId": "91f64470d76a8caeb3d97d56b96e8aff",
+  "capturedAt": "2026-10-28T00:45:38.375Z",
+  "requests": [
+    {
+      "at": "2026-10-28T00:45:24.351Z",
+      "method": "GET",
+      "path": "/api/auth/me",
+      "status": 401,
+      "contentType": "application/json; charset=utf-8",
+      "requestBody": "",
+      "responseText": "{\"error\":\"请先登录\"}\n"
+    },
+    {
+      "at": "2026-10-28T00:45:25.213Z",
+      "method": "NAV",
+      "path": "/#class/91f64470d76a8caeb3d97d56b96e8aff",
+      "status": 200,
+      "contentType": "text/html",
+      "requestBody": "",
+      "responseText": ""
+    },
+    {
+      "at": "2026-10-28T00:45:25.126Z",
+      "method": "POST",
+      "path": "/api/auth/login",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "requestBody": "{\"username\":\"reqxc473\",\"password\":\"request-pass-2026\"}",
+      "responseText": "{\"id\":\"a174de2d29bbe1e572c66b7562cc888e\",\"username\":\"reqxc473\",\"name\":\"请求取证教师\",\"role\":\"teacher\"}\n"
+    },
+    {
+      "at": "2026-10-28T00:45:25.232Z",
+      "method": "GET",
+      "path": "/api/classes",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "requestBody": "",
+      "responseText": "[{\"id\":\"91f64470d76a8caeb3d97d56b96e8aff\",\"name\":\"请求取证班 xc473\",\"description\":\"\",\"owner_id\":\"a174de2d29bbe1e572c66b7562cc888e\",\"teacher\":\"请求取证教师\",\"invite_code\":\"F1578B14BA\",\"archived\":false,\"created_at\":\"2026-10-28T00:45:18.112594Z\",\"member_count\":0,\"handout_count\":1}]\n"
+    },
+    {
+      "at": "2026-10-28T00:45:25.236Z",
+      "method": "GET",
+      "path": "/api/classes",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "requestBody": "",
+      "responseText": "[{\"id\":\"91f64470d76a8caeb3d97d56b96e8aff\",\"name\":\"请求取证班 xc473\",\"description\":\"\",\"owner_id\":\"a174de2d29bbe1e572c66b7562cc888e\",\"teacher\":\"请求取证教师\",\"invite_code\":\"F1578B14BA\",\"archived\":false,\"created_at\":\"2026-10-28T00:45:18.112594Z\",\"member_count\":0,\"handout_count\":1}]\n"
+    },
+    {
+      "at": "2026-10-28T00:45:25.242Z",
+      "method": "GET",
+      "path": "/api/classes/91f64470d76a8caeb3d97d56b96e8aff",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "requestBody": "",
+      "responseText": "{\"classroom\":{\"id\":\"91f64470d76a8caeb3d97d56b96e8aff\",\"name\":\"请求取证班 xc473\",\"description\":\"\",\"owner_id\":\"a174de2d29bbe1e572c66b7562cc888e\",\"teacher\":\"请求取证教师\",\"invite_code\":\"F1578B14BA\",\"archived\":false,\"created_at\":\"2026-10-28T00:45:18.112594Z\",\"member_count\":0,\"handout_count\":1},\"handouts\":[{\"id\":\"c8924de899348f52cc4c46bb3f073df9\",\"class_id\":\"91f64470d76a8caeb3d97d56b96e8aff\",\"title\":\"课程考核办法\",\"filename\":\"rules.md\",\"size\":128,\"mime\":\"text/markdown; charset=utf-8\",\"uploaded_at\":\"2026-10-28T00:45:18.148768Z\"}],\"members\":[]}\n"
+    },
+    {
+      "at": "2026-10-28T00:45:25.316Z",
+      "method": "GET",
+      "path": "/api/classes/91f64470d76a8caeb3d97d56b96e8aff/apps",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "requestBody": "",
+      "responseText": "{\"apps\":[{\"id\":\"qa\",\"name\":\"知识库问答\",\"description\":\"依据本班讲义回答一个问题，并给出可核对的出处。\"},{\"id\":\"quiz\",\"name\":\"出题练习\",\"description\":\"依据本班讲义出 3 道由易到难的练习题，逐题给出参考答案并标注出处。\"}]}\n"
+    },
+    {
+      "at": "2026-10-28T00:45:26.788Z",
+      "method": "GET",
+      "path": "/api/classes/91f64470d76a8caeb3d97d56b96e8aff/knowledge/documents",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "requestBody": "",
+      "responseText": "{\"documents\":[{\"handout_id\":\"c8924de899348f52cc4c46bb3f073df9\",\"title\":\"课程考核办法\",\"filename\":\"rules.md\",\"status\":\"ready\",\"error_code\":\"\",\"has_ready_index\":true,\"strategy\":\"window\",\"requested_strategy\":\"window\",\"updated_at\":\"2026-10-28T00:45:22.068105Z\"}]}\n"
+    },
+    {
+      "at": "2026-10-28T00:45:38.000Z",
+      "method": "POST",
+      "path": "/api/classes/91f64470d76a8caeb3d97d56b96e8aff/knowledge/ask",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "requestBody": "{\"query\":\"考核方式与作业要求\",\"app\":\"quiz\",\"history\":[]}",
+      "responseText": "{\"answer\":\"结论：可以出 3 道由易到难的练习题，均依据材料 [1]。\\n\\n1.（易）本课程考核由哪两部分组成？各占多少？  \\n参考答案：平时作业占 40%，期末项目占 60%。[1]\\n\\n2.（中）期末项目以什么为单位提交？每组人数要求是多少？  \\n参考答案：期末项目以小组为单位提交；每组 3 到 4 人。[1]\\n\\n3.（较难）某小组计划提交期末项目：若该组有 3 人，是否符合人数要求？若该组有 5 人，是否符合？并结合占比说明平时作业与期末项目哪一项权重更高。  \\n参考答案：3 人符合，5 人不符合，因为材料要求每组 3 到 4 人；期末项目占 60%，高于平时作业的 40%，所以期末项目权重更高。[1]\",\"citations\":[{\"char_end\":54,\"char_start\":0,\"chunk_id\":\"84a082a0-ae58-0f61-2054-20fd9f1b04ea\",\"content\":\"# 课程考核办法\\n平时作业占 40%，期末项目占 60%。\\n期末项目以小组为单位提交，每组 3 到 4 人。\",\"download_url\":\"/api/handouts/c8924de899348f52cc4c46bb3f073df9/file\",\"filename\":\"rules.md\",\"handout_id\":\"c8924de899348f52cc4c46bb3f073df9\",\"index\":1,\"locator\":{\"type\":\"line\",\"start\":1,\"end\":4,\"label\":\"第 1–4 行\"},\"ordinal\":1,\"title\":\"课程考核办法\"}],\"mode\":\"hybrid\",\"partial\":false,\"ready_documents\":1,\"status\":\"ok\",\"total_documents\":1}\n"
+    },
+    {
+      "at": "2026-10-28T00:45:38.254Z",
+      "method": "GET",
+      "path": "/api/classes/91f64470d76a8caeb3d97d56b96e8aff/prompts",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "requestBody": "",
+      "responseText": "{\"prompt_body\":\"你是班级学习助手。只依据下面提供的本班材料回答：材料不足时直接说明未找到相关内容，不要用自己的知识补充；回答使用简体中文，先给结论再给依据，并保留材料编号 [n]。\",\"prompt_source\":\"platform\",\"skills\":[{\"name\":\"解题引导\",\"body\":\"只做解题引导：说明思路、给出下一步可以尝试的步骤，必要时提出追问，帮助学生自己想出答案。不要直接给出最终答案、完整解答或可直接提交的结果；即使学生要求公布答案，也只提供思路与自查方法。\",\"enabled\":true,\"scope\":\"platform\",\"tools\":[]}],\"can_edit\":true,\"archived\":false}\n"
+    },
+    {
+      "at": "2026-10-28T00:45:38.257Z",
+      "method": "GET",
+      "path": "/api/tool-servers",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "requestBody": "",
+      "responseText": "{\"servers\":[{\"id\":\"a48ed74e5ae72c744fe19a2025cdc905\",\"name\":\"campus-tools\",\"base_url\":\"http://mcp-demo:8090\",\"connected\":true,\"has_token\":true,\"last_error\":\"\",\"connected_at\":\"2026-10-28T00:45:22Z\",\"tools\":[{\"name\":\"formula_hint\",\"description\":\"当学生询问某个公式的构成、符号含义或解题思路时使用（教学场景）。只给出公式、符号解释与可自行尝试的下一步，不做数值代入、不给最终数值答案。不适用于查课程政策、讲义检索、非计算类问题；需要数值结果时应由学生自己代入计算。\",\"input_schema\":{\"properties\":{\"level\":{\"enum\":[\"beginner\",\"intermediate\",\"advanced\"],\"type\":\"string\"},\"topic\":{\"maxLength\":200,\"minLength\":1,\"type\":\"string\"}},\"required\":[\"topic\"],\"type\":\"object\"}},{\"name\":\"unit_convert\",\"description\":\"当用户明确要求把一个带单位的值换算成另一个同类量的单位时使用。只做同类量的纯单位换算（长度、质量、时间、容量），不做货币汇率、不做自定义单位，也不判断数值的业务含义。跨类换算（例如长度换质量）会被拒绝。\",\"input_schema\":{\"properties\":{\"from\":{\"enum\":[\"m\",\"cm\",\"km\",\"kg\",\"g\",\"s\",\"min\",\"h\",\"L\",\"mL\"],\"type\":\"string\"},\"to\":{\"enum\":[\"m\",\"cm\",\"km\",\"kg\",\"g\",\"s\",\"min\",\"h\",\"L\",\"mL\"],\"type\":\"string\"},\"value\":{\"type\":\"number\"}},\"required\":[\"value\",\"from\",\"to\"],\"type\":\"object\"}}]}]}\n"
+    },
+    {
+      "at": "2026-10-28T00:45:38.258Z",
+      "method": "GET",
+      "path": "/api/tool-calls",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "requestBody": "",
+      "responseText": "{\"calls\":[],\"has_more\":false,\"limit\":50}\n"
+    },
+    {
+      "at": "2026-10-28T00:45:38.348Z",
+      "method": "POST",
+      "path": "/api/classes/91f64470d76a8caeb3d97d56b96e8aff/skills/import",
+      "status": 201,
+      "contentType": "application/json; charset=utf-8",
+      "requestBody": "",
+      "responseText": "{\"skill\":\"上传技能-请求\",\"view\":{\"prompt_body\":\"你是班级学习助手。只依据下面提供的本班材料回答：材料不足时直接说明未找到相关内容，不要用自己的知识补充；回答使用简体中文，先给结论再给依据，并保留材料编号 [n]。\",\"prompt_source\":\"platform\",\"skills\":[{\"name\":\"解题引导\",\"body\":\"只做解题引导：说明思路、给出下一步可以尝试的步骤，必要时提出追问，帮助学生自己想出答案。不要直接给出最终答案、完整解答或可直接提交的结果；即使学生要求公布答案，也只提供思路与自查方法。\",\"enabled\":true,\"scope\":\"platform\",\"tools\":[]},{\"name\":\"上传技能-请求\",\"body\":\"先给结论，再给出处。\",\"enabled\":true,\"scope\":\"class\",\"tools\":[\"knowledge_search\"]}],\"can_edit\":true,\"archived\":false}}\n"
+    }
+  ]
+}
